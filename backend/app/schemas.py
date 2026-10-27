@@ -57,6 +57,8 @@ class ModelOut(BaseModel):
     brand_id: int
     name: str
     archived: bool
+    has_manual: bool = False
+    manual_name: str | None = None
 
 
 class BrandOut(BaseModel):
@@ -177,6 +179,7 @@ class MachineBrief(BaseModel):
     year: int | None
     has_machine_photo: bool = False
     has_serial_photo: bool = False
+    has_manual: bool = False
 
 
 class ItemOut(BaseModel):
@@ -274,13 +277,20 @@ class PartLine(BaseModel):
     note: str | None
 
 
+class ConditionOut(BaseModel):
+    key: str
+    label: str
+
+
+class ConditionRename(BaseModel):
+    label: str = Field(min_length=2, max_length=40)
+
+
 class PartSum(BaseModel):
     code: str
     description: str
     part_type: str | None
-    faltante: int
-    incompleto: int
-    inoperativo: int
+    quantities: dict[str, int]
     total: int
 
 
@@ -317,4 +327,5 @@ class NeedsReport(BaseModel):
     by_serial: list[SerialBlock]
     by_model: ModelBlock | None
     models: list[ModelBlock] = []
+    conditions: list[ConditionOut] = []
     conglomerate: list[PartSum]

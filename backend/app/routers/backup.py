@@ -81,7 +81,12 @@ def brands(session: Session) -> list[dict]:
             "name": row.name,
             "archived": row.archived,
             "models": [
-                {"id": model.id, "name": model.name, "archived": model.archived}
+                {
+                    "id": model.id,
+                    "name": model.name,
+                    "archived": model.archived,
+                    "manual_name": model.manual_name,
+                }
                 for model in sorted(row.models, key=lambda item: item.id)
             ],
         }

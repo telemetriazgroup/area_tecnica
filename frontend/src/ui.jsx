@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BASE, machinePhotoUrl } from "./api";
+import { BASE, machinePhotoUrl, manualUrl } from "./api";
 import { STATUS_LABEL } from "./format";
 
 function fold(value) {
@@ -34,7 +34,7 @@ export function Field({ label, hint, children }) {
   );
 }
 
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, wide = false }) {
   useEffect(() => {
     function onKey(event) {
       if (event.key === "Escape") onClose();
@@ -46,7 +46,7 @@ export function Modal({ title, onClose, children }) {
   return (
     <div className="modal-back" onMouseDown={onClose}>
       <div
-        className="modal"
+        className={wide ? "modal wide" : "modal"}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -73,8 +73,8 @@ export function Empty({ title, text }) {
   );
 }
 
-export function Pill({ value }) {
-  return <span className={`pill ${value}`}>{STATUS_LABEL[value] || value}</span>;
+export function Pill({ value, label }) {
+  return <span className={`pill ${value}`}>{label || STATUS_LABEL[value] || value}</span>;
 }
 
 export function Page({ title, lede, action, children }) {
@@ -111,6 +111,18 @@ export function MachinePhotos({ machine, onClose }) {
           </figure>
         ))}
       </div>
+    </Modal>
+  );
+}
+
+export function ManualView({ modelId, title, present, onClose }) {
+  return (
+    <Modal wide title={title || "Manual"} onClose={onClose}>
+      {present ? (
+        <iframe className="manual-frame" title={title || "Manual"} src={manualUrl(modelId)} />
+      ) : (
+        <p className="muted">Este modelo no tiene manual cargado.</p>
+      )}
     </Modal>
   );
 }

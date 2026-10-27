@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.constants import OPEN_ASSIGNMENT, STAFF
 from app.deps import archived_requested, get_current_user, get_db, require_staff, require_superadmin
+from app.documents import replace_pdf
 from app.models import Assignment, Brand, Machine, ReeferModel, SparePart, User
 from app.photos import photo_path, remove_file, save_image
 from app.schemas import (
@@ -44,7 +45,14 @@ def description_taken(session: Session, model_id: int, description: str, exclude
 
 
 def to_model(model: ReeferModel) -> ModelOut:
-    return ModelOut(id=model.id, brand_id=model.brand_id, name=model.name, archived=model.archived)
+    return ModelOut(
+        id=model.id,
+        brand_id=model.brand_id,
+        name=model.name,
+        archived=model.archived,
+        has_manual=bool(model.manual_file),
+        manual_name=model.manual_name,
+    )
 
 
 def to_brand(brand: Brand, include_archived: bool) -> BrandOut:
@@ -850,3 +858,75 @@ def restore_part(part_id: int, session: Session = Depends(get_db), _: User = Dep
         raise HTTPException(status_code=404, detail="No se encontró el repuesto.")
     part.archived = False
     session.commit()
+
+
+def model_or_404(session: Session, model_id: int) -> ReeferModel:
+    model = session.get(ReeferModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="No se encontró el modelo.")
+    return model
+
+
+def can_view_manual(session: Session, user: User, model_id: int) -> None:
+    if user.role in STAFF:
+        return
+    technician_id = user.technician.id if user.technician else None
+    if technician_id is None:
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este manual.")
+    assigned = session.scalar(
+        select(Assignment.id)
+        .join(Machine, Assignment.machine_id == Machine.id)
+        .where(Machine.model_id == model_id, Assignment.technician_id == technician_id)
+    )
+    if assigned is None:
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este manual.")
+
+
+@router.get("/models/{model_id}/manual")
+def download_manual(
+    model_id: int,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    model = model_or_404(session, model_id)
+    can_view_manual(session, user, model.id)
+    if not model.manual_file:
+        raise HTTPException(status_code=404, detail="Este modelo no tiene manual.")
+    return FileResponse(
+        photo_path(model.manual_file),
+        media_type="application/pdf",
+        filename=model.manual_name or "manual.pdf",
+        content_disposition_type="inline",
+    )
+
+
+@router.post("/models/{model_id}/manual", response_model=ModelOut)
+def upload_manual(
+    model_id: int,
+    manual: UploadFile = File(...),
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    model = model_or_404(session, model_id)
+    filename, original = replace_pdf(model.manual_file, manual)
+    model.manual_file = filename
+    model.manual_name = original
+    session.commit()
+    session.refresh(model)
+    return to_model(model)
+
+
+@router.delete("/models/{model_id}/manual", response_model=ModelOut)
+def delete_manual(
+    model_id: int,
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    model = model_or_404(session, model_id)
+    if model.manual_file:
+        remove_file(model.manual_file)
+    model.manual_file = None
+    model.manual_name = None
+    session.commit()
+    session.refresh(model)
+    return to_model(model)

@@ -9,19 +9,17 @@ const blank = { full_name: "", username: "", password: "", role: "encargado", te
 
 export default function Users() {
   const { user } = useAuth();
-  const list = useFetch(
-    () => (user?.role === "superadmin" ? api("/api/users") : Promise.resolve([])),
-    [user?.role],
-  );
-  const technicians = useFetch(
-    () => (user?.role === "superadmin" ? api("/api/users/technicians") : Promise.resolve([])),
-    [user?.role],
-  );
+  const staff = user?.role === "superadmin" || user?.role === "encargado";
+  const list = useFetch(() => (staff ? api("/api/users") : Promise.resolve([])), [staff]);
+  const technicians = useFetch(() => (staff ? api("/api/users/technicians") : Promise.resolve([])), [staff]);
   const [form, setForm] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (user && user.role !== "superadmin") return <Navigate to="/app" replace />;
+  if (user && user.role !== "superadmin" && user.role !== "encargado") return <Navigate to="/app" replace />;
+  const roles = user?.role === "superadmin"
+    ? [["tecnico", "Técnico"], ["encargado", "Encargado"], ["superadmin", "Superadmin"]]
+    : [["tecnico", "Técnico"], ["encargado", "Encargado"]];
 
   const linked = form?.role === "tecnico" && form.technician_id;
   const choices = (technicians.data || []).filter((tech) => !tech.user_id || tech.user_id === form?.id);
@@ -67,7 +65,9 @@ export default function Users() {
   return (
     <Page
       title="Usuarios"
-      lede="Crea el acceso de un técnico, un encargado o un superadmin. Si eliges un técnico, el nombre sale de su ficha."
+      lede={user?.role === "superadmin"
+        ? "Crea el acceso de un técnico, un encargado o un superadmin. Si eliges un técnico, el nombre sale de su ficha."
+        : "Puedes crear técnicos y encargados. Si eliges un técnico, el nombre sale de su ficha."}
       action={<button type="button" className="btn" onClick={() => setForm({ ...blank })}>Nuevo usuario</button>}
     >
       <Banner>{error || list.error}</Banner>
@@ -100,9 +100,7 @@ export default function Users() {
                 value={form.role}
                 onChange={(event) => setForm({ ...form, role: event.target.value, technician_id: event.target.value === "tecnico" ? form.technician_id : "" })}
               >
-                <option value="tecnico">Técnico</option>
-                <option value="encargado">Encargado</option>
-                <option value="superadmin">Superadmin</option>
+                {roles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </Field>
             {form.role === "tecnico" && (

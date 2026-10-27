@@ -71,8 +71,19 @@ class ReeferModel(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    manual_file: Mapped[str | None] = mapped_column(String(80))
+    manual_name: Mapped[str | None] = mapped_column(String(200))
+
     brand: Mapped[Brand] = relationship(back_populates="models")
     machines: Mapped[list[Machine]] = relationship(back_populates="model")
+
+
+class ConditionOption(Base):
+    __tablename__ = "condition_options"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    label: Mapped[str] = mapped_column(String(80))
+    position: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Machine(Base):

@@ -15,6 +15,8 @@ import Inspections from "./pages/admin/Inspections";
 import InspectionDetail from "./pages/admin/InspectionDetail";
 import Reports from "./pages/admin/Reports";
 import Users from "./pages/admin/Users";
+import Manuals from "./pages/admin/Manuals";
+import Conditions from "./pages/admin/Conditions";
 import Audit from "./pages/admin/Audit";
 import Backup from "./pages/admin/Backup";
 
@@ -50,11 +52,13 @@ export default function App() {
         <Route path="marcas" element={<Brands />} />
         <Route path="maquinas" element={<Machines />} />
         <Route path="repuestos" element={<Parts />} />
+        <Route path="manuales" element={<Manuals />} />
         <Route path="asignaciones" element={<Assignments />} />
         <Route path="inspecciones" element={<Inspections />} />
         <Route path="inspecciones/:id" element={<InspectionDetail />} />
         <Route path="reportes" element={<Reports />} />
         <Route path="usuarios" element={<Users />} />
+        <Route path="condiciones" element={<Conditions />} />
         <Route path="auditoria" element={<Audit />} />
         <Route path="backup" element={<Backup />} />
       </Route>

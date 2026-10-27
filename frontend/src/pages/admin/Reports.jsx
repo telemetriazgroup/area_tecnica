@@ -12,13 +12,17 @@ const TABS = [
   ["general", "General"],
 ];
 
-function SumTable({ rows }) {
-  if (!rows?.length) return <Empty title="Sin repuestos" text="No hay faltantes en este corte." />;
+function SumTable({ rows, conditions }) {
+  if (!rows?.length) return <Empty title="Sin repuestos" text="No hay anotaciones en este corte." />;
   return (
     <div className="table-wrap">
       <table>
         <thead>
-          <tr><th>Serie</th><th>Descripción</th><th>Tipo</th><th>Faltante</th><th>Incompleto</th><th>Inoperativo</th><th>Total</th></tr>
+          <tr>
+            <th>Serie</th><th>Descripción</th><th>Tipo</th>
+            {(conditions || []).map((item) => <th key={item.key}>{item.label}</th>)}
+            <th>Total</th>
+          </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
@@ -26,9 +30,7 @@ function SumTable({ rows }) {
               <td>{row.code}</td>
               <td>{row.description}</td>
               <td>{row.part_type || "—"}</td>
-              <td>{row.faltante}</td>
-              <td>{row.incompleto}</td>
-              <td>{row.inoperativo}</td>
+              {(conditions || []).map((item) => <td key={item.key}>{row.quantities?.[item.key] || 0}</td>)}
               <td>{row.total}</td>
             </tr>
           ))}
@@ -203,10 +205,10 @@ export default function Reports() {
                 {" · "}{block.technician}
                 {" · "}{formatDateTime(block.completed_at)}
               </p>
-              {block.parts.length === 0 && <p>Sin faltantes.</p>}
+              {block.parts.length === 0 && <p>Sin repuestos.</p>}
               {block.parts.map((part) => (
                 <p key={`${part.code}-${part.condition}`}>
-                  <Pill value={part.condition} /> {part.quantity} × {part.description} ({part.code})
+                  <Pill value={part.condition} label={needs.conditions?.find((item) => item.key === part.condition)?.label} /> {part.quantity} × {part.description} ({part.code})
                   {part.note ? ` — ${part.note}` : ""}
                 </p>
               ))}
@@ -223,10 +225,10 @@ export default function Reports() {
                 {" · "}{block.technician}
                 {" · "}{formatDateTime(block.completed_at)}
               </p>
-              {block.parts.length === 0 && <p>Sin faltantes.</p>}
+              {block.parts.length === 0 && <p>Sin repuestos.</p>}
               {block.parts.map((part) => (
                 <p key={`${block.inspection_id}-${part.code}-${part.condition}`}>
-                  <Pill value={part.condition} /> {part.quantity} × {part.description} ({part.code})
+                  <Pill value={part.condition} label={needs.conditions?.find((item) => item.key === part.condition)?.label} /> {part.quantity} × {part.description} ({part.code})
                   {part.note ? ` — ${part.note}` : ""}
                 </p>
               ))}
@@ -236,10 +238,10 @@ export default function Reports() {
           {tab === "modelo" && needs.by_model?.units?.length > 0 && (
             <>
               <h2>Total del modelo</h2>
-              <SumTable rows={needs.by_model.parts} />
+              <SumTable rows={needs.by_model.parts} conditions={needs.conditions} />
             </>
           )}
-          {tab === "total" && <SumTable rows={needs.conglomerate} />}
+          {tab === "total" && <SumTable rows={needs.conglomerate} conditions={needs.conditions} />}
 
           {tab === "general" && (needs.models || []).map((block) => (
             <section key={`${block.brand}-${block.model}`} className="model-page">
@@ -254,10 +256,10 @@ export default function Reports() {
                     {" · "}{unit.technician}
                     {" · "}{formatDateTime(unit.completed_at)}
                   </p>
-                  {unit.parts.length === 0 && <p>Sin faltantes.</p>}
+                  {unit.parts.length === 0 && <p>Sin repuestos.</p>}
                   {unit.parts.map((part) => (
                     <p key={`${unit.inspection_id}-${part.code}-${part.condition}`}>
-                      <Pill value={part.condition} /> {part.quantity} × {part.description} ({part.code})
+                      <Pill value={part.condition} label={needs.conditions?.find((item) => item.key === part.condition)?.label} /> {part.quantity} × {part.description} ({part.code})
                       {part.note ? ` — ${part.note}` : ""}
                     </p>
                   ))}

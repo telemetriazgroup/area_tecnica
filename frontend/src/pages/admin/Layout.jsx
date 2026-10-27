@@ -10,9 +10,11 @@ const LINKS = [
   ["/app/marcas", "Marcas y modelos"],
   ["/app/maquinas", "Máquinas"],
   ["/app/repuestos", "Repuestos"],
+  ["/app/manuales", "Manuales"],
   ["/app/asignaciones", "Asignaciones"],
   ["/app/inspecciones", "Inspecciones"],
   ["/app/reportes", "Reportes"],
+  ["/app/usuarios", "Usuarios"],
 ];
 
 export default function AdminLayout() {
@@ -23,7 +25,7 @@ export default function AdminLayout() {
   useEffect(() => setOpen(false), [location.pathname]);
 
   const links = user?.role === "superadmin"
-    ? [...LINKS, ["/app/usuarios", "Usuarios"], ["/app/auditoria", "Auditoría"], ["/app/backup", "Backup"]]
+    ? [...LINKS, ["/app/condiciones", "Condiciones"], ["/app/auditoria", "Auditoría"], ["/app/backup", "Backup"]]
     : LINKS;
 
   return (

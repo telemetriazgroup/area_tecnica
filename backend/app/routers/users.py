@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.deps import get_db, require_superadmin
+from app.deps import get_db, require_staff
 from app.models import Technician, User
 from app.schemas import UserOut, UserWrite
 from app.security import hash_password
@@ -72,6 +72,15 @@ def apply_link(session: Session, user: User, technician_id: int | None, full_nam
     user.full_name = technician.name
 
 
+def guard_role(actor: User, role: str, current: str | None = None) -> None:
+    if actor.role == "superadmin":
+        return
+    if current == "superadmin" or role == "superadmin":
+        raise HTTPException(status_code=403, detail="Solo un superadmin puede administrar esa cuenta.")
+    if role not in {"tecnico", "encargado"}:
+        raise HTTPException(status_code=400, detail="El encargado solo puede crear técnicos y encargados.")
+
+
 def check_password(password: str | None, required: bool) -> str | None:
     password = clean(password)
     if required and not password:
@@ -82,15 +91,16 @@ def check_password(password: str | None, required: bool) -> str | None:
 
 
 @router.get("", response_model=list[UserOut])
-def list_users(session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
-    users = session.scalars(
-        select(User).options(selectinload(User.technician)).order_by(User.full_name)
-    ).all()
+def list_users(session: Session = Depends(get_db), actor: User = Depends(require_staff)):
+    stmt = select(User).options(selectinload(User.technician)).order_by(User.full_name)
+    if actor.role != "superadmin":
+        stmt = stmt.where(User.role != "superadmin")
+    users = session.scalars(stmt).all()
     return [to_user(user) for user in users]
 
 
 @router.get("/technicians")
-def linkable_technicians(session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
+def linkable_technicians(session: Session = Depends(get_db), _: User = Depends(require_staff)):
     rows = session.scalars(
         select(Technician).where(Technician.archived.is_(False)).order_by(Technician.name)
     ).all()
@@ -98,7 +108,8 @@ def linkable_technicians(session: Session = Depends(get_db), _: User = Depends(r
 
 
 @router.post("", response_model=UserOut, status_code=201)
-def create_user(payload: UserWrite, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
+def create_user(payload: UserWrite, session: Session = Depends(get_db), actor: User = Depends(require_staff)):
+    guard_role(actor, payload.role)
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="El rol debe ser técnico, encargado o superadmin.")
     username = normalize_username(payload.username)
@@ -126,11 +137,12 @@ def update_user(
     user_id: int,
     payload: UserWrite,
     session: Session = Depends(get_db),
-    _: User = Depends(require_superadmin),
+    actor: User = Depends(require_staff),
 ):
     user = session.scalar(select(User).where(User.id == user_id).options(selectinload(User.technician)))
     if user is None:
         raise HTTPException(status_code=404, detail="No se encontró el usuario.")
+    guard_role(actor, payload.role, user.role)
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="El rol debe ser técnico, encargado o superadmin.")
     ensure_superadmin_remains(session, user, payload.role, user.active)
@@ -151,10 +163,11 @@ def update_user(
 
 
 @router.post("/{user_id}/archive", status_code=204)
-def archive_user(user_id: int, session: Session = Depends(get_db), actor: User = Depends(require_superadmin)):
+def archive_user(user_id: int, session: Session = Depends(get_db), actor: User = Depends(require_staff)):
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="No se encontró el usuario.")
+    guard_role(actor, user.role, user.role)
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="No puedes desactivar tu propio usuario.")
     ensure_superadmin_remains(session, user, user.role, False)
@@ -163,9 +176,10 @@ def archive_user(user_id: int, session: Session = Depends(get_db), actor: User =
 
 
 @router.post("/{user_id}/restore", status_code=204)
-def restore_user(user_id: int, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
+def restore_user(user_id: int, session: Session = Depends(get_db), actor: User = Depends(require_staff)):
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="No se encontró el usuario.")
+    guard_role(actor, user.role, user.role)
     user.active = True
     session.commit()

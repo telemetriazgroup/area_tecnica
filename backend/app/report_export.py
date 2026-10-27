@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.config import settings
-from app.schemas import DailyReport, NeedsReport, PartSum
+from app.schemas import ConditionOut, DailyReport, NeedsReport, PartSum
 
 LOGO = Path(__file__).resolve().parent / "assets" / "logo.png"
 NAVY = (24, 44, 77)
@@ -19,11 +19,12 @@ NAVY_HEX = "182C4D"
 MUTED = (90, 106, 128)
 INK = (21, 32, 51)
 ZEBRA = (232, 237, 244)
-CONDITIONS = {
-    "faltante": "Faltante",
-    "incompleto": "Incompleto",
-    "inoperativo": "Inoperativo",
-}
+def condition_names(report: NeedsReport) -> dict[str, str]:
+    return {item.key: item.label for item in report.conditions}
+
+
+def condition_name(labels: dict[str, str], key: str) -> str:
+    return labels.get(key, key)
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PDF_MEDIA = "application/pdf"
@@ -199,18 +200,18 @@ def build_needs_pdf(report: NeedsReport, view: str) -> bytes:
     pdf = ReportPDF(title, subtitle)
     pdf.add_page()
     if view == "serie":
-        write_serial_blocks(pdf, report.by_serial, "No hay inspecciones cerradas en ese rango.")
+        write_serial_blocks(pdf, report.by_serial, "No hay inspecciones cerradas en ese rango.", condition_names(report))
     elif view == "modelo":
-        write_serial_blocks(pdf, report.by_model.units, "Ese modelo no tiene inspecciones cerradas en ese rango.")
+        write_serial_blocks(pdf, report.by_model.units, "Ese modelo no tiene inspecciones cerradas en ese rango.", condition_names(report))
         if report.by_model.units:
             if pdf.get_y() + 20 > pdf.page_break_trigger:
                 pdf.add_page()
             pdf.set_text_color(*NAVY)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 8, pdf_text("Total del modelo"), new_x="LMARGIN", new_y="NEXT")
-            write_sum_pdf(pdf, report.by_model.parts)
+            write_sum_pdf(pdf, report.by_model.parts, report.conditions)
     else:
-        write_sum_pdf(pdf, report.conglomerate)
+        write_sum_pdf(pdf, report.conglomerate, report.conditions)
     return bytes(pdf.output())
 
 
@@ -231,18 +232,21 @@ def general_pdf(report: NeedsReport) -> bytes:
         pdf.report_title = f"{block.brand} {block.model}"
         pdf.report_subtitle = f"{span}  ·  {block.machines} máquinas  ·  {pieces} piezas"
         pdf.add_page()
-        write_serial_blocks(pdf, block.units, "Sin equipos en este modelo.")
+        write_serial_blocks(pdf, block.units, "Sin equipos en este modelo.", condition_names(report))
     return bytes(pdf.output())
 
 
-def write_sum_pdf(pdf: FPDF, parts: list[PartSum]) -> None:
-    headers = ["Serie", "Descripción", "Tipo", "Faltante", "Incompleto", "Inoperativo", "Total"]
-    widths = [36, 100, 34, 26, 28, 30, 19]
+def write_sum_pdf(pdf: FPDF, parts: list[PartSum], conditions: list[ConditionOut]) -> None:
+    headers = ["Serie", "Descripción", "Tipo", *[item.label for item in conditions], "Total"]
+    usable = 273
+    fixed = [32, 78, 28, 18]
+    each = (usable - sum(fixed)) / max(len(conditions), 1)
+    widths = [fixed[0], fixed[1], fixed[2], *([each] * len(conditions)), fixed[3]]
     paint_head(pdf, headers, widths)
     paint_rows(
         pdf,
         [
-            [part.code, part.description, part.part_type or "", part.faltante, part.incompleto, part.inoperativo, part.total]
+            [part.code, part.description, part.part_type or "", *[part.quantities.get(item.key, 0) for item in conditions], part.total]
             for part in parts
         ],
         widths,
@@ -250,7 +254,7 @@ def write_sum_pdf(pdf: FPDF, parts: list[PartSum]) -> None:
     )
 
 
-def write_serial_blocks(pdf: FPDF, blocks: list, empty: str) -> None:
+def write_serial_blocks(pdf: FPDF, blocks: list, empty: str, labels: dict[str, str]) -> None:
     headers = ["Cant.", "Condición", "Serie", "Descripción", "Nota"]
     widths = [18, 32, 36, 110, 77]
     if not blocks:
@@ -279,7 +283,7 @@ def write_serial_blocks(pdf: FPDF, blocks: list, empty: str) -> None:
         pdf.cell(0, 5, pdf_text(detail), new_x="LMARGIN", new_y="NEXT")
         if not block.parts:
             pdf.set_text_color(*INK)
-            pdf.cell(0, 6, pdf_text("Sin faltantes."), new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 6, pdf_text("Sin repuestos."), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
             continue
         paint_head(pdf, headers, widths)
@@ -288,7 +292,7 @@ def write_serial_blocks(pdf: FPDF, blocks: list, empty: str) -> None:
             [
                 [
                     part.quantity,
-                    CONDITIONS.get(part.condition, part.condition),
+                    condition_name(labels, part.condition),
                     part.code,
                     part.description,
                     part.note or "",
@@ -369,10 +373,10 @@ def workbook_bytes(book: Workbook) -> bytes:
     return buffer.getvalue()
 
 
-def sum_rows(parts: list[PartSum]) -> tuple[list[str], list[list]]:
-    headers = ["Serie", "Descripción", "Tipo", "Faltante", "Incompleto", "Inoperativo", "Total"]
+def sum_rows(parts: list[PartSum], conditions: list[ConditionOut]) -> tuple[list[str], list[list]]:
+    headers = ["Serie", "Descripción", "Tipo", *[item.label for item in conditions], "Total"]
     rows = [
-        [part.code, part.description, part.part_type or "", part.faltante, part.incompleto, part.inoperativo, part.total]
+        [part.code, part.description, part.part_type or "", *[part.quantities.get(item.key, 0) for item in conditions], part.total]
         for part in parts
     ]
     return headers, rows
@@ -415,13 +419,13 @@ def excel_sheet_name(title: str, used: set[str]) -> str:
     return name
 
 
-def unit_rows(units: list) -> list[list]:
+def unit_rows(units: list, labels: dict[str, str]) -> list[list]:
     rows = []
     for unit in units:
         if not unit.parts:
             rows.append([
                 unit.serial, unit.location or "", unit.year or "", unit.technician,
-                format_when(unit.completed_at), "", "", "", "", "Sin faltantes",
+                format_when(unit.completed_at), "", "", "", "", "Sin repuestos",
             ])
             continue
         for part in unit.parts:
@@ -432,7 +436,7 @@ def unit_rows(units: list) -> list[list]:
                 unit.technician,
                 format_when(unit.completed_at),
                 part.quantity,
-                CONDITIONS.get(part.condition, part.condition),
+                condition_name(labels, part.condition),
                 part.code,
                 part.description,
                 part.note or "",
@@ -443,6 +447,7 @@ def unit_rows(units: list) -> list[list]:
 def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
     book = Workbook()
     sheet = book.active
+    labels = condition_names(report)
     detail_headers = ["Serie equipo", "Ubicación", "Año", "Técnico", "Cierre", "Cant.", "Condición", "Serie", "Descripción", "Nota"]
     if view == "general":
         span = f"Del {format_day(report.date_from)} al {format_day(report.date_to)}"
@@ -461,7 +466,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
                 f"{block.brand} {block.model}",
                 f"{span}  ·  {block.machines} máquinas  ·  {pieces} piezas",
             )
-            write_table(current, 5, detail_headers, unit_rows(block.units))
+            write_table(current, 5, detail_headers, unit_rows(block.units, labels))
         return workbook_bytes(book)
     if view == "modelo":
         block = report.by_model
@@ -472,10 +477,10 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             f"Necesidad de {block.brand} {block.model}",
             f"Del {format_day(report.date_from)} al {format_day(report.date_to)}  ·  {block.machines} máquinas  ·  {pieces} piezas",
         )
-        write_table(sheet, 5, detail_headers, unit_rows(block.units))
+        write_table(sheet, 5, detail_headers, unit_rows(block.units, labels))
         total = book.create_sheet("Total del modelo")
         stamp_logo(total, f"Total de {block.brand} {block.model}", f"{block.machines} equipos  ·  {pieces} piezas")
-        total_headers, total_rows = sum_rows(block.parts)
+        total_headers, total_rows = sum_rows(block.parts, report.conditions)
         write_table(total, 5, total_headers, total_rows)
     elif view == "total":
         sheet.title = "Conglomerado"
@@ -484,7 +489,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             "Conglomerado de repuestos",
             f"Del {format_day(report.date_from)} al {format_day(report.date_to)}  ·  {report.summary.inspections} inspecciones  ·  {report.summary.parts_total} piezas",
         )
-        headers, rows = sum_rows(report.conglomerate)
+        headers, rows = sum_rows(report.conglomerate, report.conditions)
         write_table(sheet, 5, headers, rows)
     else:
         sheet.title = "Por serie"
@@ -499,7 +504,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             if not block.parts:
                 rows.append([
                     block.serial, block.brand, block.model, block.location or "", block.year or "",
-                    block.technician, format_when(block.completed_at), "", "", "", "", "Sin faltantes",
+                    block.technician, format_when(block.completed_at), "", "", "", "", "Sin repuestos",
                 ])
                 continue
             for part in block.parts:
@@ -512,7 +517,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
                     block.technician,
                     format_when(block.completed_at),
                     part.quantity,
-                    CONDITIONS.get(part.condition, part.condition),
+                    condition_name(labels, part.condition),
                     part.code,
                     part.description,
                     part.note or "",

@@ -2,12 +2,15 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, photoUrl } from "../../api";
 import { formatDateTime, formatDuration, useFetch } from "../../format";
-import { Banner, MachinePhotos, Page, Pill } from "../../ui";
+import { Banner, MachinePhotos, ManualView, Page, Pill } from "../../ui";
 
 export default function InspectionDetail() {
   const { id } = useParams();
   const detail = useFetch(() => api(`/api/inspections/${id}`), [id]);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const conditions = useFetch(() => api("/api/conditions"), []);
+  const labelOf = (key) => conditions.data?.find((row) => row.key === key)?.label;
   const data = detail.data;
 
   return (
@@ -39,10 +42,21 @@ export default function InspectionDetail() {
             {" · "}{data.completed_at ? `Cerró la lista ${formatDateTime(data.completed_at)}` : "La lista sigue abierta"}
           </p>
           <Pill value={data.status} />
-          <button type="button" className="btn ghost photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
+          <div className="actions">
+            <button type="button" className="btn ghost photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
+            <button type="button" className="btn ghost photos-btn" onClick={() => setManualOpen(true)}>Ver manual</button>
+          </div>
           {photosOpen && <MachinePhotos machine={data.machine} onClose={() => setPhotosOpen(false)} />}
+          {manualOpen && (
+            <ManualView
+              modelId={data.machine.model_id}
+              title={`Manual de ${data.machine.brand} ${data.machine.model}`}
+              present={data.machine.has_manual}
+              onClose={() => setManualOpen(false)}
+            />
+          )}
           <div className="stack" style={{ marginTop: 16 }}>
-            {data.items.length === 0 && <p>Esta máquina se revisó sin faltantes.</p>}
+            {data.items.length === 0 && <p>Esta máquina se revisó sin repuestos anotados.</p>}
             {data.items.map((item) => (
               <article key={item.id} className="card">
                 <header>
@@ -50,7 +64,7 @@ export default function InspectionDetail() {
                     <h2>{item.description}</h2>
                     <p className="muted">{item.code} · cantidad {item.quantity}{item.part_type ? ` · ${item.part_type}` : ""}</p>
                   </div>
-                  <Pill value={item.condition} />
+                  <Pill value={item.condition} label={labelOf(item.condition)} />
                 </header>
                 {item.note && <p>{item.note}</p>}
                 {item.photos.length > 0 && (

@@ -11,7 +11,9 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
-from app.routers import audit, auth, backup, catalog, operations, reports, technicians, users
+from app.constants import DEFAULT_CONDITIONS
+from app.models import ConditionOption
+from app.routers import audit, auth, backup, catalog, conditions, operations, reports, technicians, users
 from app.seed import seed
 
 logger = logging.getLogger("area_tecnica")
@@ -47,7 +49,23 @@ async def lifespan(_: FastAPI):
         )
         connection.execute(text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS machine_photo VARCHAR(80)"))
         connection.execute(text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS serial_photo VARCHAR(80)"))
+        connection.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS manual_file VARCHAR(80)"))
+        connection.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS manual_name VARCHAR(200)"))
+        connection.execute(
+            text(
+                "UPDATE inspection_items SET condition = CASE condition "
+                "WHEN 'faltante' THEN 'cambio' "
+                "WHEN 'incompleto' THEN 'instalacion' "
+                "WHEN 'inoperativo' THEN 'desinstalacion' "
+                "ELSE condition END "
+                "WHERE condition IN ('faltante', 'incompleto', 'inoperativo')"
+            )
+        )
     with SessionLocal() as session:
+        for key, label, position in DEFAULT_CONDITIONS:
+            if session.get(ConditionOption, key) is None:
+                session.add(ConditionOption(key=key, label=label, position=position))
+        session.commit()
         seed(session)
     yield
 
@@ -85,6 +103,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(technicians.router, prefix="/api")
 app.include_router(catalog.router, prefix="/api")
+app.include_router(conditions.router, prefix="/api")
 app.include_router(operations.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")

@@ -1,20 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../../api";
-import { Banner, MachinePhotos, Pill, TechBar } from "../../ui";
-
-const CONDITIONS = [
-  ["faltante", "Faltante"],
-  ["incompleto", "Incompleto"],
-  ["inoperativo", "Inoperativo"],
-];
+import { useFetch } from "../../format";
+import { Banner, MachinePhotos, ManualView, Pill, TechBar } from "../../ui";
 
 const emptySheet = {
   mode: "add",
   part: null,
   item: null,
   quantity: 1,
-  condition: "faltante",
+  condition: "cambio",
   note: "",
   photo: null,
   preview: "",
@@ -29,6 +24,12 @@ export default function Inspect() {
   const [results, setResults] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const conditions = useFetch(() => api("/api/conditions"), []);
+  const options = conditions.data?.length
+    ? conditions.data.map((row) => [row.key, row.label])
+    : [["cambio", "Cambio"], ["instalacion", "Instalación"], ["desinstalacion", "Desinstalación"]];
+  const labelOf = (key) => options.find(([value]) => value === key)?.[1] || key;
   const [busy, setBusy] = useState(false);
 
   const editable = inspection?.status === "en_proceso";
@@ -162,7 +163,7 @@ export default function Inspect() {
   async function finish() {
     const empty = inspection.items.length === 0;
     const message = empty
-      ? "¿Terminar sin repuestos? La máquina quedará revisada y sin faltantes."
+      ? "¿Terminar sin repuestos? La máquina quedará revisada sin anotaciones."
       : "¿Terminar la inspección? Después ya no podrás editarla.";
     if (!window.confirm(message)) return;
     setBusy(true);
@@ -197,7 +198,10 @@ export default function Inspect() {
           {inspection.machine.location ? ` · ${inspection.machine.location}` : ""}
           {inspection.machine.year ? ` · ${inspection.machine.year}` : ""}
         </p>
-        <button type="button" className="btn ghost block photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
+        <div className="actions">
+          <button type="button" className="btn ghost photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
+          <button type="button" className="btn ghost photos-btn" onClick={() => setManualOpen(true)}>Ver manual</button>
+        </div>
         <Banner>{error}</Banner>
         {!editable && <Banner kind="ok">Esta revisión ya está cerrada.</Banner>}
 
@@ -235,7 +239,7 @@ export default function Inspect() {
                   <strong>{item.description}</strong>
                   <small>{item.code} · cantidad {item.quantity}</small>
                 </div>
-                <Pill value={item.condition} />
+                <Pill value={item.condition} label={labelOf(item.condition)} />
               </header>
               {item.note && <p className="note">{item.note}</p>}
               {item.photos.length > 0 && (
@@ -265,6 +269,14 @@ export default function Inspect() {
       )}
 
       {photosOpen && <MachinePhotos machine={inspection.machine} onClose={() => setPhotosOpen(false)} />}
+      {manualOpen && (
+        <ManualView
+          modelId={inspection.machine.model_id}
+          title={`Manual de ${inspection.machine.brand} ${inspection.machine.model}`}
+          present={inspection.machine.has_manual}
+          onClose={() => setManualOpen(false)}
+        />
+      )}
 
       {sheet && (
         <div className="drawer-back" onMouseDown={() => setSheet(null)}>
@@ -283,9 +295,9 @@ export default function Inspect() {
               </div>
             </div>
             <div className="field">
-              <span>Estado</span>
+              <span>Condición</span>
               <div className="segment">
-                {CONDITIONS.map(([value, label]) => (
+                {options.map(([value, label]) => (
                   <button
                     key={value}
                     type="button"

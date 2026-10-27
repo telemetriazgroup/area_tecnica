@@ -6,9 +6,19 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.constants import CONDITIONS, MAX_PHOTOS, OPEN_ASSIGNMENT, STAFF
+from app.constants import MAX_PHOTOS, OPEN_ASSIGNMENT, STAFF
 from app.deps import get_current_user, get_db, require_staff, require_tecnico
-from app.models import Assignment, Inspection, InspectionItem, InspectionPhoto, Machine, SparePart, Technician, User
+from app.models import (
+    Assignment,
+    ConditionOption,
+    Inspection,
+    InspectionItem,
+    InspectionPhoto,
+    Machine,
+    SparePart,
+    Technician,
+    User,
+)
 from app.photos import photo_path, remove_file, save_image
 from app.routers.catalog import to_part
 from app.schemas import (
@@ -65,9 +75,9 @@ def ensure_edit(user: User, inspection: Inspection) -> None:
         raise HTTPException(status_code=400, detail="Esta inspección ya está cerrada.")
 
 
-def check_condition(condition: str) -> str:
-    if condition not in CONDITIONS:
-        raise HTTPException(status_code=400, detail="El estado debe ser faltante, incompleto o inoperativo.")
+def check_condition(session: Session, condition: str) -> str:
+    if session.get(ConditionOption, condition) is None:
+        raise HTTPException(status_code=400, detail="Elige una condición de la lista.")
     return condition
 
 
@@ -114,6 +124,7 @@ def inspection_out(inspection: Inspection) -> InspectionOut:
             year=machine.year,
             has_machine_photo=bool(machine.machine_photo),
             has_serial_photo=bool(machine.serial_photo),
+            has_manual=bool(machine.model.manual_file),
         ),
         items=items,
     )
@@ -433,7 +444,7 @@ def add_item(
         inspection_id=inspection.id,
         spare_part_id=part.id,
         quantity=check_quantity(quantity),
-        condition=check_condition(condition),
+        condition=check_condition(session, condition),
         note=clean_note,
     )
     session.add(item)
@@ -482,7 +493,7 @@ def update_item(
     inspection = load_inspection(session, item.inspection_id)
     ensure_edit(user, inspection)
     item.quantity = check_quantity(payload.quantity)
-    item.condition = check_condition(payload.condition)
+    item.condition = check_condition(session, payload.condition)
     note = clean(payload.note)
     if note and len(note) > 800:
         raise HTTPException(status_code=400, detail="La nota es demasiado larga.")

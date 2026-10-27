@@ -11,6 +11,7 @@ from app.constants import OPEN_ASSIGNMENT
 from app.deps import get_db, require_staff
 from app.models import (
     Assignment,
+    ConditionOption,
     Inspection,
     InspectionItem,
     Machine,
@@ -18,6 +19,7 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    ConditionOut,
     DailyGroup,
     DailyInspection,
     DailyReport,
@@ -57,27 +59,29 @@ def load_completed(session: Session, start, end) -> list[Inspection]:
     )
 
 
-def sum_parts(inspections: list[Inspection]) -> list[PartSum]:
+def load_conditions(session: Session) -> list[ConditionOut]:
+    rows = session.scalars(select(ConditionOption).order_by(ConditionOption.position, ConditionOption.key)).all()
+    return [ConditionOut(key=row.key, label=row.label) for row in rows]
+
+
+def sum_parts(inspections: list[Inspection], keys: list[str]) -> list[PartSum]:
     grouped: dict[tuple[str, str, str | None], dict[str, int]] = {}
     for inspection in inspections:
         for item in inspection.items:
             part = item.spare_part
             key = (part.code, part.description, part.part_type)
-            bucket = grouped.setdefault(key, {"faltante": 0, "incompleto": 0, "inoperativo": 0})
+            bucket = grouped.setdefault(key, {name: 0 for name in keys})
             if item.condition in bucket:
                 bucket[item.condition] += item.quantity
     rows = []
     for (code, description, part_type), qty in grouped.items():
-        total = qty["faltante"] + qty["incompleto"] + qty["inoperativo"]
         rows.append(
             PartSum(
                 code=code,
                 description=description,
                 part_type=part_type,
-                faltante=qty["faltante"],
-                incompleto=qty["incompleto"],
-                inoperativo=qty["inoperativo"],
-                total=total,
+                quantities=qty,
+                total=sum(qty.values()),
             )
         )
     rows.sort(key=lambda row: (-row.total, row.description.lower()))
@@ -225,6 +229,8 @@ def needs_report(
     _: User = Depends(require_staff),
 ):
     start, end = range_bounds(date_from, date_to)
+    conditions = load_conditions(session)
+    keys = [item.key for item in conditions]
     inspections = load_completed(session, start, end)
     by_serial = []
     for inspection in inspections:
@@ -264,7 +270,7 @@ def needs_report(
                 brand=brand_name,
                 model=model_name,
                 machines=len({unit.serial for unit in units}),
-                parts=sum_parts(chosen_units),
+                parts=sum_parts(chosen_units, keys),
                 units=units,
             )
         )
@@ -286,7 +292,7 @@ def needs_report(
             brand=model.brand.name,
             model=model.name,
             machines=len({inspection.machine.serial for inspection in chosen}),
-            parts=sum_parts(chosen),
+            parts=sum_parts(chosen, keys),
             units=[
                 block
                 for block in by_serial
@@ -300,7 +306,8 @@ def needs_report(
         by_serial=by_serial,
         by_model=by_model,
         models=models,
-        conglomerate=sum_parts(inspections),
+        conditions=conditions,
+        conglomerate=sum_parts(inspections, keys),
     )
 
 

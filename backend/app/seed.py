@@ -181,20 +181,20 @@ def seed(session: Session) -> None:
                 inspection_id=inspection.id,
                 spare_part_id=parts["CT-12"].id,
                 quantity=2,
-                condition="faltante",
+                condition="cambio",
                 note="Quemado, no enciende.",
             ),
             InspectionItem(
                 inspection_id=inspection.id,
                 spare_part_id=parts["FLT-01"].id,
                 quantity=1,
-                condition="incompleto",
+                condition="instalacion",
             ),
             InspectionItem(
                 inspection_id=inspection.id,
                 spare_part_id=parts["SEN-T"].id,
                 quantity=1,
-                condition="inoperativo",
+                condition="desinstalacion",
                 note="Marca fuera de rango.",
             ),
         ]
