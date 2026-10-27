@@ -54,8 +54,12 @@ export default function AdminLayout() {
       {open && <button type="button" className="backdrop" aria-label="Cerrar menú" onClick={() => setOpen(false)} />}
       <div className="workspace">
         <header className="topbar">
-          <button type="button" className="btn ghost small menu-btn" onClick={() => setOpen(true)}>Menú</button>
-          <strong>{user?.full_name}</strong>
+          <button type="button" className="btn small menu-btn" onClick={() => setOpen(true)}>Menú</button>
+          <div className="topbar-id">
+            <img className="topbar-logo" src={`${BASE}/logo.png`} alt="" />
+            <strong>{user?.full_name}</strong>
+          </div>
+          <button type="button" className="btn exit small" onClick={logout}>Salir</button>
         </header>
         <main className="content">
           <Outlet />

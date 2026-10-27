@@ -36,6 +36,11 @@ export function photoUrl(id) {
   return withBase(`/api/photos/${id}?access_token=${encodeURIComponent(token)}`);
 }
 
+export function machinePhotoUrl(id, kind) {
+  const token = getToken() || "";
+  return withBase(`/api/machines/${id}/photos/${kind}?access_token=${encodeURIComponent(token)}`);
+}
+
 export async function api(path, { method = "GET", body, form } = {}) {
   const headers = {};
   const token = getToken();

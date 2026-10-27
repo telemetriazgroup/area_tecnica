@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../../api";
-import { Banner, Pill, TechBar } from "../../ui";
+import { Banner, MachinePhotos, Pill, TechBar } from "../../ui";
 
 const CONDITIONS = [
   ["faltante", "Faltante"],
@@ -28,6 +28,7 @@ export default function Inspect() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [sheet, setSheet] = useState(null);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const editable = inspection?.status === "en_proceso";
@@ -189,39 +190,40 @@ export default function Inspect() {
 
   return (
     <main className="phone">
-      <TechBar title={inspection.machine.brand} onBack={() => navigate("/tecnico")} />
+      <TechBar serial={inspection.machine.serial} onBack={() => navigate("/tecnico")} />
       <div className="tech-body">
-        <p className="serial-title">{inspection.machine.serial}</p>
-        <p className="muted">
-          {inspection.machine.model}
+        <p className="muted machine-meta">
+          {inspection.machine.brand} · {inspection.machine.model}
           {inspection.machine.location ? ` · ${inspection.machine.location}` : ""}
           {inspection.machine.year ? ` · ${inspection.machine.year}` : ""}
         </p>
+        <button type="button" className="btn ghost block photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
         <Banner>{error}</Banner>
         {!editable && <Banner kind="ok">Esta revisión ya está cerrada.</Banner>}
 
         {editable && (
-          <>
-            <div className="search-sticky">
-              <label className="field">
-                <span>Buscar repuesto</span>
-                <input
-                  value={query}
-                  placeholder="Ejemplo: contactor 12A"
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="results">
+          <section className="finder">
+            <label>
+              <span>Buscar repuesto</span>
+              <input
+                value={query}
+                placeholder="Escribe serie o descripción"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <div className="finder-results">
               {results.map((part) => (
-                <button key={part.id} type="button" className="result card" onClick={() => openAdd(part)}>
-                  <strong>{part.description}</strong>
-                  <small>{part.code}{part.part_type ? ` · ${part.part_type}` : ""}</small>
+                <button key={part.id} type="button" className="hit" onClick={() => openAdd(part)}>
+                  <span>
+                    <strong>{part.description}</strong>
+                    <small>{part.part_type || "Repuesto"}</small>
+                  </span>
+                  <b>{part.code}</b>
                 </button>
               ))}
-              {results.length === 0 && <p className="muted">No hay repuestos con ese texto en este modelo.</p>}
+              {results.length === 0 && <p>No hay repuestos con ese texto en este modelo.</p>}
             </div>
-          </>
+          </section>
         )}
 
         <h2>Anotados ({inspection.items.length})</h2>
@@ -261,6 +263,8 @@ export default function Inspect() {
           </button>
         </div>
       )}
+
+      {photosOpen && <MachinePhotos machine={inspection.machine} onClose={() => setPhotosOpen(false)} />}
 
       {sheet && (
         <div className="drawer-back" onMouseDown={() => setSheet(null)}>

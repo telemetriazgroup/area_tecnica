@@ -35,10 +35,11 @@ export default function TechHome() {
     <main className="phone">
       <TechBar
         title="Mis máquinas"
-        action={<button type="button" className="text-btn" onClick={logout}>Salir</button>}
+        hello={user?.full_name}
+        action={<button type="button" className="btn exit small" onClick={logout}>Salir</button>}
       />
       <div className="tech-body">
-        <p className="muted">Hola, {user?.full_name}. Elige la reefer asignada.</p>
+        <p className="muted">Elige la serie asignada.</p>
         <Banner kind="ok">{done ? `Quedó registrada la serie ${done}.` : ""}</Banner>
         <Banner>{error || jobs.error}</Banner>
         {jobs.loading && <p>Cargando máquinas…</p>}

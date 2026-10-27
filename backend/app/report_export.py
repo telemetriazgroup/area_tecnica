@@ -197,10 +197,18 @@ def build_needs_pdf(report: NeedsReport, view: str) -> bytes:
     pdf = ReportPDF(title, subtitle)
     pdf.add_page()
     if view == "serie":
-        write_serial_pdf(pdf, report)
+        write_serial_blocks(pdf, report.by_serial, "No hay inspecciones cerradas en ese rango.")
+    elif view == "modelo":
+        write_serial_blocks(pdf, report.by_model.units, "Ese modelo no tiene inspecciones cerradas en ese rango.")
+        if report.by_model.units:
+            if pdf.get_y() + 20 > pdf.page_break_trigger:
+                pdf.add_page()
+            pdf.set_text_color(*NAVY)
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 8, pdf_text("Total del modelo"), new_x="LMARGIN", new_y="NEXT")
+            write_sum_pdf(pdf, report.by_model.parts)
     else:
-        parts = report.by_model.parts if view == "modelo" else report.conglomerate
-        write_sum_pdf(pdf, parts)
+        write_sum_pdf(pdf, report.conglomerate)
     return bytes(pdf.output())
 
 
@@ -219,15 +227,15 @@ def write_sum_pdf(pdf: FPDF, parts: list[PartSum]) -> None:
     )
 
 
-def write_serial_pdf(pdf: FPDF, report: NeedsReport) -> None:
+def write_serial_blocks(pdf: FPDF, blocks: list, empty: str) -> None:
     headers = ["Cant.", "Condición", "Serie", "Descripción", "Nota"]
     widths = [18, 32, 36, 110, 77]
-    if not report.by_serial:
+    if not blocks:
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(*MUTED)
-        pdf.cell(0, 8, pdf_text("No hay inspecciones cerradas en ese rango."))
+        pdf.cell(0, 8, pdf_text(empty))
         return
-    for block in report.by_serial:
+    for block in blocks:
         detail = " · ".join(
             part
             for part in (
@@ -383,8 +391,33 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             f"Necesidad de {block.brand} {block.model}",
             f"Del {format_day(report.date_from)} al {format_day(report.date_to)}  ·  {block.machines} máquinas  ·  {pieces} piezas",
         )
-        headers, rows = sum_rows(block.parts)
+        headers = ["Serie equipo", "Ubicación", "Año", "Técnico", "Cierre", "Cant.", "Condición", "Serie", "Descripción", "Nota"]
+        rows = []
+        for unit in block.units:
+            if not unit.parts:
+                rows.append([
+                    unit.serial, unit.location or "", unit.year or "", unit.technician,
+                    format_when(unit.completed_at), "", "", "", "", "Sin faltantes",
+                ])
+                continue
+            for part in unit.parts:
+                rows.append([
+                    unit.serial,
+                    unit.location or "",
+                    unit.year or "",
+                    unit.technician,
+                    format_when(unit.completed_at),
+                    part.quantity,
+                    CONDITIONS.get(part.condition, part.condition),
+                    part.code,
+                    part.description,
+                    part.note or "",
+                ])
         write_table(sheet, 5, headers, rows)
+        total = book.create_sheet("Total del modelo")
+        stamp_logo(total, f"Total de {block.brand} {block.model}", f"{block.machines} equipos  ·  {pieces} piezas")
+        total_headers, total_rows = sum_rows(block.parts)
+        write_table(total, 5, total_headers, total_rows)
     elif view == "total":
         sheet.title = "Conglomerado"
         stamp_logo(

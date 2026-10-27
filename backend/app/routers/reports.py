@@ -271,6 +271,11 @@ def needs_report(
             model=model.name,
             machines=len({inspection.machine.serial for inspection in chosen}),
             parts=sum_parts(chosen),
+            units=[
+                block
+                for block in by_serial
+                if block.brand == model.brand.name and block.model == model.name
+            ],
         )
     return NeedsReport(
         date_from=date_from,

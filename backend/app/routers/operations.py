@@ -112,6 +112,8 @@ def inspection_out(inspection: Inspection) -> InspectionOut:
             model_id=machine.model_id,
             location=machine.location,
             year=machine.year,
+            has_machine_photo=bool(machine.machine_photo),
+            has_serial_photo=bool(machine.serial_photo),
         ),
         items=items,
     )

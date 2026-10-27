@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
 import { formatDateTime, formatDuration, useFetch } from "../../format";
-import { Banner, Empty, Field, Page, Pill } from "../../ui";
+import { Banner, Combo, Empty, Page, Pill } from "../../ui";
 
 export default function Assignments() {
   const active = useFetch(() => api("/api/assignments?scope=activas"), []);
@@ -18,6 +18,10 @@ export default function Assignments() {
 
   async function assign(event) {
     event.preventDefault();
+    if (!machineId || !technicianId) {
+      setError("Elige la serie y el técnico de la lista.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -54,20 +58,27 @@ export default function Assignments() {
       <Banner>{error || active.error}</Banner>
       <form className="card" onSubmit={assign}>
         <div className="split">
-          <Field label="Máquina libre">
-            <select required value={machineId} onChange={(event) => setMachineId(event.target.value)}>
-              <option value="">Elegir serie</option>
-              {free.map((machine) => (
-                <option key={machine.id} value={machine.id}>{machine.serial} · {machine.brand_name} {machine.model_name}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Técnico">
-            <select required value={technicianId} onChange={(event) => setTechnicianId(event.target.value)}>
-              <option value="">Elegir</option>
-              {technicians.data?.map((tech) => <option key={tech.id} value={tech.id}>{tech.name}</option>)}
-            </select>
-          </Field>
+          <Combo
+            label="Máquina libre"
+            placeholder="Escribe la serie"
+            options={free.map((machine) => ({
+              value: machine.id,
+              label: `${machine.serial} ${machine.brand_name} ${machine.model_name}`,
+              serial: machine.serial,
+              hint: `${machine.brand_name} ${machine.model_name}`,
+            }))}
+            value={machineId}
+            onChange={setMachineId}
+          />
+          <Combo
+            label="Técnico"
+            placeholder="Escribe el nombre"
+            options={(technicians.data || [])
+              .filter((tech) => !tech.archived)
+              .map((tech) => ({ value: tech.id, label: tech.name }))}
+            value={technicianId}
+            onChange={setTechnicianId}
+          />
         </div>
         <button className="btn" disabled={busy} type="submit">{busy ? "Asignando…" : "Asignar"}</button>
       </form>

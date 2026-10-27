@@ -91,6 +91,8 @@ class MachineOut(BaseModel):
     location: str | None
     year: int | None
     archived: bool
+    has_machine_photo: bool = False
+    has_serial_photo: bool = False
     active_assignment: AssignmentBrief | None = None
 
 
@@ -173,6 +175,8 @@ class MachineBrief(BaseModel):
     model_id: int
     location: str | None
     year: int | None
+    has_machine_photo: bool = False
+    has_serial_photo: bool = False
 
 
 class ItemOut(BaseModel):
@@ -297,6 +301,7 @@ class ModelBlock(BaseModel):
     model: str
     machines: int
     parts: list[PartSum]
+    units: list[SerialBlock] = []
 
 
 class NeedsSummary(BaseModel):

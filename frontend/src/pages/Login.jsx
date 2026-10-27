@@ -1,28 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { BASE } from "../api";
 import { useAuth } from "../auth";
 import { Banner, Field } from "../ui";
+
+function Welcome({ name }) {
+  return (
+    <main className="login-screen">
+      <div className="welcome">
+        <img className="login-logo" src={`${BASE}/logo.png`} alt="ZGROUP" />
+        <img className="loader-gif" src={`${BASE}/loading.gif`} alt="" />
+        <h1>{name ? `Hola, ${name}` : "Entrando…"}</h1>
+        <p>{name ? "Abriendo tu espacio de trabajo." : "Comprobando la cuenta."}</p>
+      </div>
+    </main>
+  );
+}
 
 export default function Login() {
   const { user, ready, login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState("idle");
+  const [helloName, setHelloName] = useState("");
 
-  if (ready && user) return <Navigate to={user.role === "tecnico" ? "/tecnico" : "/app"} replace />;
+  useEffect(() => {
+    if (phase !== "hello") return undefined;
+    const timer = setTimeout(() => setPhase("enter"), 1600);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  if (phase === "enter" && user) return <Navigate to={user.role === "tecnico" ? "/tecnico" : "/app"} replace />;
+  if (phase === "loading" || phase === "hello") return <Welcome name={phase === "hello" ? helloName : ""} />;
+  if (phase === "idle" && ready && user) return <Navigate to={user.role === "tecnico" ? "/tecnico" : "/app"} replace />;
 
   async function onSubmit(event) {
     event.preventDefault();
-    setBusy(true);
+    setPhase("loading");
     setError("");
     try {
-      await login(username, password);
+      const logged = await login(username, password);
+      setHelloName(logged.full_name);
+      setPhase("hello");
     } catch (err) {
       setError(err.message);
-    } finally {
-      setBusy(false);
+      setPhase("idle");
     }
   }
 
@@ -51,9 +74,7 @@ export default function Login() {
             required
           />
         </Field>
-        <button className="btn block" disabled={busy} type="submit">
-          {busy ? "Entrando…" : "Entrar"}
-        </button>
+        <button className="btn block" type="submit">Entrar</button>
         </form>
       </div>
     </main>

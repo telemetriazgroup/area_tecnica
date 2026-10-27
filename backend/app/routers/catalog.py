@@ -4,14 +4,15 @@ import re
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.constants import OPEN_ASSIGNMENT
-from app.deps import get_db, require_staff
+from app.constants import OPEN_ASSIGNMENT, STAFF
+from app.deps import get_current_user, get_db, require_staff
 from app.models import Assignment, Brand, Machine, ReeferModel, SparePart, User
+from app.photos import photo_path, remove_file, save_image
 from app.schemas import (
     AssignmentBrief,
     BrandOut,
@@ -109,6 +110,8 @@ def to_machine(machine: Machine, assignment: Assignment | None) -> MachineOut:
         location=machine.location,
         year=machine.year,
         archived=machine.archived,
+        has_machine_photo=bool(machine.machine_photo),
+        has_serial_photo=bool(machine.serial_photo),
         active_assignment=active,
     )
 
@@ -484,6 +487,107 @@ def restore_machine(machine_id: int, session: Session = Depends(get_db), _: User
     machine = _machine_or_404(session, machine_id)
     machine.archived = False
     session.commit()
+
+
+PHOTO_FIELDS = {"maquina": "machine_photo", "serie": "serial_photo"}
+
+
+def photo_field(kind: str) -> str:
+    field = PHOTO_FIELDS.get(kind)
+    if field is None:
+        raise HTTPException(status_code=404, detail="No se encontró la foto.")
+    return field
+
+
+def can_view_machine(session: Session, user: User, machine_id: int) -> None:
+    if user.role in STAFF:
+        return
+    technician_id = user.technician.id if user.technician else None
+    if technician_id is None:
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver esta foto.")
+    assigned = session.scalar(
+        select(Assignment.id).where(
+            Assignment.machine_id == machine_id,
+            Assignment.technician_id == technician_id,
+        )
+    )
+    if assigned is None:
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver esta foto.")
+
+
+@router.get("/machines/{machine_id}/photos/{kind}")
+def machine_photo(
+    machine_id: int,
+    kind: str,
+    session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    machine = _machine_or_404(session, machine_id)
+    can_view_machine(session, user, machine.id)
+    filename = getattr(machine, photo_field(kind))
+    if not filename:
+        raise HTTPException(status_code=404, detail="Esta máquina no tiene esa foto.")
+    return FileResponse(photo_path(filename), media_type="image/jpeg")
+
+
+@router.post("/machines/{machine_id}/photos/{kind}", response_model=MachineOut)
+def upload_machine_photo(
+    machine_id: int,
+    kind: str,
+    photo: UploadFile = File(...),
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    field = photo_field(kind)
+    machine = session.scalar(
+        select(Machine)
+        .where(Machine.id == machine_id)
+        .options(selectinload(Machine.brand), selectinload(Machine.model))
+    )
+    if machine is None:
+        raise HTTPException(status_code=404, detail="No se encontró la máquina.")
+    if not photo.filename:
+        raise HTTPException(status_code=400, detail="La foto está vacía.")
+    filename = save_image(photo)
+    previous = getattr(machine, field)
+    setattr(machine, field, filename)
+    session.commit()
+    if previous:
+        remove_file(previous)
+    assignment = session.scalar(
+        select(Assignment)
+        .where(Assignment.machine_id == machine.id, Assignment.status.in_(OPEN_ASSIGNMENT))
+        .options(selectinload(Assignment.technician))
+    )
+    return to_machine(machine, assignment)
+
+
+@router.delete("/machines/{machine_id}/photos/{kind}", response_model=MachineOut)
+def delete_machine_photo(
+    machine_id: int,
+    kind: str,
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    field = photo_field(kind)
+    machine = session.scalar(
+        select(Machine)
+        .where(Machine.id == machine_id)
+        .options(selectinload(Machine.brand), selectinload(Machine.model))
+    )
+    if machine is None:
+        raise HTTPException(status_code=404, detail="No se encontró la máquina.")
+    previous = getattr(machine, field)
+    setattr(machine, field, None)
+    session.commit()
+    if previous:
+        remove_file(previous)
+    assignment = session.scalar(
+        select(Assignment)
+        .where(Assignment.machine_id == machine.id, Assignment.status.in_(OPEN_ASSIGNMENT))
+        .options(selectinload(Assignment.technician))
+    )
+    return to_machine(machine, assignment)
 
 
 @router.get("/spare-parts", response_model=list[SparePartOut])

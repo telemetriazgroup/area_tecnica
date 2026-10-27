@@ -45,6 +45,8 @@ async def lifespan(_: FastAPI):
                 "ON spare_parts (model_id, lower(description))"
             )
         )
+        connection.execute(text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS machine_photo VARCHAR(80)"))
+        connection.execute(text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS serial_photo VARCHAR(80)"))
     with SessionLocal() as session:
         seed(session)
     yield

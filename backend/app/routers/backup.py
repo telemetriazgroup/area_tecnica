@@ -104,6 +104,8 @@ def machines(session: Session) -> list[dict]:
             "location": row.location,
             "year": row.year,
             "archived": row.archived,
+            "machine_photo": row.machine_photo,
+            "serial_photo": row.serial_photo,
         }
         for row in rows
     ]

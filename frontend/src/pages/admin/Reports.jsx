@@ -180,7 +180,12 @@ export default function Reports() {
                 {tab === "modelo" && `Necesidad de ${needs.by_model?.brand || ""} ${needs.by_model?.model || ""}`}
                 {tab === "total" && "Conglomerado de repuestos"}
               </h2>
-              <p>Del {formatInputDate(from)} al {formatInputDate(to)} · {needs.summary.inspections} inspecciones · {needs.summary.parts_total} piezas</p>
+              <p>
+                Del {formatInputDate(from)} al {formatInputDate(to)}
+                {tab === "modelo"
+                  ? ` · ${needs.by_model?.machines || 0} equipos · ${needs.by_model?.parts.reduce((sum, row) => sum + row.total, 0) || 0} piezas`
+                  : ` · ${needs.summary.inspections} inspecciones · ${needs.summary.parts_total} piezas`}
+              </p>
             </div>
           </header>
 
@@ -205,7 +210,31 @@ export default function Reports() {
           ))}
           {tab === "serie" && needs.by_serial.length === 0 && <Empty title="Sin máquinas" text="No hay inspecciones cerradas en ese rango." />}
 
-          {tab === "modelo" && <SumTable rows={needs.by_model?.parts || []} />}
+          {tab === "modelo" && (needs.by_model?.units || []).map((block) => (
+            <section key={block.inspection_id} className="machine-block">
+              <h3>{block.serial}</h3>
+              <p className="muted">
+                {block.location || "Sin ubicación"}
+                {block.year ? ` · ${block.year}` : ""}
+                {" · "}{block.technician}
+                {" · "}{formatDateTime(block.completed_at)}
+              </p>
+              {block.parts.length === 0 && <p>Sin faltantes.</p>}
+              {block.parts.map((part) => (
+                <p key={`${block.inspection_id}-${part.code}-${part.condition}`}>
+                  <Pill value={part.condition} /> {part.quantity} × {part.description} ({part.code})
+                  {part.note ? ` — ${part.note}` : ""}
+                </p>
+              ))}
+            </section>
+          ))}
+          {tab === "modelo" && needs.by_model?.units?.length === 0 && <Empty title="Sin equipos" text="Ese modelo no tiene inspecciones cerradas en ese rango." />}
+          {tab === "modelo" && needs.by_model?.units?.length > 0 && (
+            <>
+              <h2>Total del modelo</h2>
+              <SumTable rows={needs.by_model.parts} />
+            </>
+          )}
           {tab === "total" && <SumTable rows={needs.conglomerate} />}
         </article>
       )}

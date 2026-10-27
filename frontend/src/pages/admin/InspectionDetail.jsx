@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, photoUrl } from "../../api";
 import { formatDateTime, formatDuration, useFetch } from "../../format";
-import { Banner, Page, Pill } from "../../ui";
+import { Banner, MachinePhotos, Page, Pill } from "../../ui";
 
 export default function InspectionDetail() {
   const { id } = useParams();
   const detail = useFetch(() => api(`/api/inspections/${id}`), [id]);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const data = detail.data;
 
   return (
@@ -37,6 +39,8 @@ export default function InspectionDetail() {
             {" · "}{data.completed_at ? `Cerró la lista ${formatDateTime(data.completed_at)}` : "La lista sigue abierta"}
           </p>
           <Pill value={data.status} />
+          <button type="button" className="btn ghost photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
+          {photosOpen && <MachinePhotos machine={data.machine} onClose={() => setPhotosOpen(false)} />}
           <div className="stack" style={{ marginTop: 16 }}>
             {data.items.length === 0 && <p>Esta máquina se revisó sin faltantes.</p>}
             {data.items.map((item) => (
