@@ -1,0 +1,51 @@
+name: area-tecnica
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-area}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-area}
+      POSTGRES_DB: ${POSTGRES_DB:-area_tecnica}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-area}:${POSTGRES_PASSWORD:-area}@db:5432/${POSTGRES_DB:-area_tecnica}
+      JWT_SECRET: ${JWT_SECRET:-cambia-esto-en-produccion}
+      MEDIA_DIR: /app/media
+      TIMEZONE: America/Lima
+      CORS_ORIGINS: http://localhost:8180,http://localhost:8080,http://localhost:5173
+    volumes:
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "8180:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:
