@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BASE, machinePhotoUrl, manualUrl } from "./api";
+import { BASE, machinePhotoUrl, openManual } from "./api";
 import { STATUS_LABEL } from "./format";
 
 function fold(value) {
@@ -116,12 +116,42 @@ export function MachinePhotos({ machine, onClose }) {
 }
 
 export function ManualView({ modelId, title, present, onClose }) {
+  const [src, setSrc] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!present) return undefined;
+    let cancelled = false;
+    let objectUrl = "";
+    openManual(modelId)
+      .then((url) => {
+        if (cancelled) URL.revokeObjectURL(url);
+        else {
+          objectUrl = url;
+          setSrc(url);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "No se pudo abrir el manual.");
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [modelId, present]);
+
   return (
     <Modal wide title={title || "Manual"} onClose={onClose}>
-      {present ? (
-        <iframe className="manual-frame" title={title || "Manual"} src={manualUrl(modelId)} />
-      ) : (
-        <p className="muted">Este modelo no tiene manual cargado.</p>
+      {!present && <p className="muted">Este modelo no tiene manual cargado.</p>}
+      {present && !src && !error && <p className="muted">Cargando el manual…</p>}
+      {error && <p className="muted">{error}</p>}
+      {src && (
+        <>
+          <iframe className="manual-frame" title={title || "Manual"} src={src} />
+          <p className="manual-actions">
+            <a className="btn ghost" href={src} target="_blank" rel="noreferrer">Abrir en otra pestaña</a>
+          </p>
+        </>
       )}
     </Modal>
   );

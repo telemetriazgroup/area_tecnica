@@ -41,9 +41,24 @@ export function machinePhotoUrl(id, kind) {
   return withBase(`/api/machines/${id}/photos/${kind}?access_token=${encodeURIComponent(token)}`);
 }
 
-export function manualUrl(modelId) {
-  const token = getToken() || "";
-  return withBase(`/api/models/${modelId}/manual?access_token=${encodeURIComponent(token)}`);
+export async function openManual(modelId) {
+  const headers = { Accept: "application/pdf" };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(withBase(`/api/models/${modelId}/manual`), {
+    headers,
+    credentials: "include",
+  });
+  if (response.status === 401) {
+    clearSession();
+    if (!window.location.pathname.startsWith(`${BASE}/login`)) window.location.assign(`${BASE}/login`);
+    throw new Error("La sesión expiró. Vuelve a entrar.");
+  }
+  if (!response.ok) throw new Error("No se pudo abrir el manual.");
+  const data = await response.arrayBuffer();
+  const mark = new TextDecoder().decode(data.slice(0, 5));
+  if (mark !== "%PDF-") throw new Error("El archivo recibido no es un PDF.");
+  return URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
 }
 
 export async function api(path, { method = "GET", body, form } = {}) {

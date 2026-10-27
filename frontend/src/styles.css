@@ -251,7 +251,8 @@ tr:last-child td { border-bottom: 0; }
 }
 .modal { border-radius: 20px; }
 .modal.wide { width: min(100%, 960px); }
-.manual-frame { width: 100%; height: min(72dvh, 720px); border: 0; border-radius: 12px; background: var(--bg); }
+.manual-frame { width: 100%; height: min(72dvh, 720px); border: 0; border-radius: 12px; background: #fff; }
+.manual-actions { display: flex; justify-content: flex-end; margin: 10px 0 0; }
 .drawer { border-radius: 20px 20px 16px 16px; }
 .modal header, .drawer header { display: flex; justify-content: space-between; align-items: center; }
 .modal h2, .drawer h2 { margin: 8px 0; font-size: 1.2rem; }
