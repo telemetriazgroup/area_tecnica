@@ -316,4 +316,5 @@ class NeedsReport(BaseModel):
     summary: NeedsSummary
     by_serial: list[SerialBlock]
     by_model: ModelBlock | None
+    models: list[ModelBlock] = []
     conglomerate: list[PartSum]

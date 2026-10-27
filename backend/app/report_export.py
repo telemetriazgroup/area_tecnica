@@ -174,6 +174,8 @@ def build_daily_pdf(report: DailyReport) -> bytes:
 
 
 def build_needs_pdf(report: NeedsReport, view: str) -> bytes:
+    if view == "general":
+        return general_pdf(report)
     if view == "modelo":
         block = report.by_model
         pieces = sum(part.total for part in block.parts)
@@ -209,6 +211,27 @@ def build_needs_pdf(report: NeedsReport, view: str) -> bytes:
             write_sum_pdf(pdf, report.by_model.parts)
     else:
         write_sum_pdf(pdf, report.conglomerate)
+    return bytes(pdf.output())
+
+
+def general_pdf(report: NeedsReport) -> bytes:
+    span = f"Del {format_day(report.date_from)} al {format_day(report.date_to)}"
+    pdf = ReportPDF(
+        "Reporte general",
+        f"{span}  ·  {report.summary.machines} máquinas  ·  {report.summary.parts_total} piezas",
+    )
+    if not report.models:
+        pdf.add_page()
+        pdf.set_font("Helvetica", "", 11)
+        pdf.set_text_color(*MUTED)
+        pdf.cell(0, 8, pdf_text("No hay inspecciones cerradas en ese rango."))
+        return bytes(pdf.output())
+    for block in report.models:
+        pieces = sum(part.total for part in block.parts)
+        pdf.report_title = f"{block.brand} {block.model}"
+        pdf.report_subtitle = f"{span}  ·  {block.machines} máquinas  ·  {pieces} piezas"
+        pdf.add_page()
+        write_serial_blocks(pdf, block.units, "Sin equipos en este modelo.")
     return bytes(pdf.output())
 
 
@@ -379,9 +402,67 @@ def build_daily_xlsx(report: DailyReport) -> bytes:
     return workbook_bytes(book)
 
 
+def excel_sheet_name(title: str, used: set[str]) -> str:
+    cleaned = " ".join("".join(" " if char in "[]:*?/\\" else char for char in title).split()) or "Modelo"
+    base = cleaned[:31]
+    name = base
+    number = 2
+    while name in used:
+        suffix = f" {number}"
+        name = f"{base[: 31 - len(suffix)]}{suffix}"
+        number += 1
+    used.add(name)
+    return name
+
+
+def unit_rows(units: list) -> list[list]:
+    rows = []
+    for unit in units:
+        if not unit.parts:
+            rows.append([
+                unit.serial, unit.location or "", unit.year or "", unit.technician,
+                format_when(unit.completed_at), "", "", "", "", "Sin faltantes",
+            ])
+            continue
+        for part in unit.parts:
+            rows.append([
+                unit.serial,
+                unit.location or "",
+                unit.year or "",
+                unit.technician,
+                format_when(unit.completed_at),
+                part.quantity,
+                CONDITIONS.get(part.condition, part.condition),
+                part.code,
+                part.description,
+                part.note or "",
+            ])
+    return rows
+
+
 def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
     book = Workbook()
     sheet = book.active
+    detail_headers = ["Serie equipo", "Ubicación", "Año", "Técnico", "Cierre", "Cant.", "Condición", "Serie", "Descripción", "Nota"]
+    if view == "general":
+        span = f"Del {format_day(report.date_from)} al {format_day(report.date_to)}"
+        if not report.models:
+            sheet.title = "General"
+            stamp_logo(sheet, "Reporte general", span)
+            write_table(sheet, 5, detail_headers, [])
+            return workbook_bytes(book)
+        used: set[str] = set()
+        for index, block in enumerate(report.models):
+            pieces = sum(part.total for part in block.parts)
+            current = sheet if index == 0 else book.create_sheet()
+            current.title = excel_sheet_name(f"{block.brand} {block.model}", used)
+            stamp_logo(
+                current,
+                f"{block.brand} {block.model}",
+                f"{span}  ·  {block.machines} máquinas  ·  {pieces} piezas",
+            )
+            write_table(current, 5, detail_headers, unit_rows(block.units))
+        return workbook_bytes(book)
     if view == "modelo":
         block = report.by_model
         pieces = sum(part.total for part in block.parts)
@@ -391,29 +472,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             f"Necesidad de {block.brand} {block.model}",
             f"Del {format_day(report.date_from)} al {format_day(report.date_to)}  ·  {block.machines} máquinas  ·  {pieces} piezas",
         )
-        headers = ["Serie equipo", "Ubicación", "Año", "Técnico", "Cierre", "Cant.", "Condición", "Serie", "Descripción", "Nota"]
-        rows = []
-        for unit in block.units:
-            if not unit.parts:
-                rows.append([
-                    unit.serial, unit.location or "", unit.year or "", unit.technician,
-                    format_when(unit.completed_at), "", "", "", "", "Sin faltantes",
-                ])
-                continue
-            for part in unit.parts:
-                rows.append([
-                    unit.serial,
-                    unit.location or "",
-                    unit.year or "",
-                    unit.technician,
-                    format_when(unit.completed_at),
-                    part.quantity,
-                    CONDITIONS.get(part.condition, part.condition),
-                    part.code,
-                    part.description,
-                    part.note or "",
-                ])
-        write_table(sheet, 5, headers, rows)
+        write_table(sheet, 5, detail_headers, unit_rows(block.units))
         total = book.create_sheet("Total del modelo")
         stamp_logo(total, f"Total de {block.brand} {block.model}", f"{block.machines} equipos  ·  {pieces} piezas")
         total_headers, total_rows = sum_rows(block.parts)

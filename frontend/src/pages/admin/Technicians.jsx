@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { api, download } from "../../api";
+import { useAuth } from "../../auth";
 import { useFetch } from "../../format";
 import { Banner, Empty, Field, Modal, Page } from "../../ui";
 
 const blank = { name: "", cargo: "", dni: "", phone: "" };
 
 export default function Technicians() {
+  const { user } = useAuth();
+  const canSeeArchived = user?.role === "superadmin";
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -90,7 +93,9 @@ export default function Technicians() {
       <form className="filters" onSubmit={(event) => { event.preventDefault(); setQuery(q.trim()); }}>
         <input value={q} placeholder="Buscar por nombre, DNI o usuario" onChange={(event) => setQ(event.target.value)} />
         <button className="btn ghost" type="submit">Buscar</button>
-        <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivados</label>
+        {canSeeArchived && (
+          <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivados</label>
+        )}
       </form>
       <div className="actions" style={{ marginBottom: 14 }}>
         <label className="btn ghost">
@@ -118,7 +123,11 @@ export default function Technicians() {
                 <td data-label="Usuario">{row.username || "Sin usuario"}</td>
                 <td className="actions" data-label="">
                   <button type="button" className="btn ghost small" onClick={() => setForm({ ...blank, ...row })}>Editar</button>
-                  <button type="button" className="btn danger small" onClick={() => toggle(row)}>{row.archived ? "Restaurar" : "Archivar"}</button>
+                  {row.archived ? (
+                    canSeeArchived && <button type="button" className="btn danger small" onClick={() => toggle(row)}>Restaurar</button>
+                  ) : (
+                    <button type="button" className="btn danger small" onClick={() => toggle(row)}>Archivar</button>
+                  )}
                 </td>
               </tr>
             ))}

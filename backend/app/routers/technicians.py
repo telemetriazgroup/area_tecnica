@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants import OPEN_ASSIGNMENT
-from app.deps import get_db, require_staff
+from app.deps import archived_requested, get_db, require_staff, require_superadmin
 from app.models import Assignment, Technician, User
 from app.schemas import BulkResult, TechnicianIn, TechnicianOut
 from app.utils import clean, commit_or_conflict, fold, ilike
@@ -61,10 +61,10 @@ def list_technicians(
     q: str = "",
     include_archived: bool = False,
     session: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
 ):
     stmt = select(Technician).options(selectinload(Technician.user)).order_by(Technician.name)
-    if not include_archived:
+    if not archived_requested(user, include_archived):
         stmt = stmt.where(Technician.archived.is_(False))
     query = q.strip()
     if query:
@@ -139,7 +139,7 @@ def archive_technician(
 def restore_technician(
     technician_id: int,
     session: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    _: User = Depends(require_superadmin),
 ):
     tech = load_technician(session, technician_id)
     tech.archived = False

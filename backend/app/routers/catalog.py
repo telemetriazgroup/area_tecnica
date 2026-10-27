@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants import OPEN_ASSIGNMENT, STAFF
-from app.deps import get_current_user, get_db, require_staff
+from app.deps import archived_requested, get_current_user, get_db, require_staff, require_superadmin
 from app.models import Assignment, Brand, Machine, ReeferModel, SparePart, User
 from app.photos import photo_path, remove_file, save_image
 from app.schemas import (
@@ -120,12 +120,13 @@ def to_machine(machine: Machine, assignment: Assignment | None) -> MachineOut:
 def list_brands(
     include_archived: bool = False,
     session: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
 ):
+    show_archived = archived_requested(user, include_archived)
     brands = session.scalars(select(Brand).options(selectinload(Brand.models)).order_by(Brand.name)).all()
-    if not include_archived:
+    if not show_archived:
         brands = [brand for brand in brands if not brand.archived]
-    return [to_brand(brand, include_archived) for brand in brands]
+    return [to_brand(brand, show_archived) for brand in brands]
 
 
 @router.post("/brands", response_model=BrandOut, status_code=201)
@@ -165,7 +166,7 @@ def archive_brand(brand_id: int, session: Session = Depends(get_db), _: User = D
 
 
 @router.post("/brands/{brand_id}/restore", status_code=204)
-def restore_brand(brand_id: int, session: Session = Depends(get_db), _: User = Depends(require_staff)):
+def restore_brand(brand_id: int, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
     brand = get_brand(session, brand_id)
     brand.archived = False
     session.commit()
@@ -363,7 +364,7 @@ def archive_model(model_id: int, session: Session = Depends(get_db), _: User = D
 
 
 @router.post("/models/{model_id}/restore", status_code=204)
-def restore_model(model_id: int, session: Session = Depends(get_db), _: User = Depends(require_staff)):
+def restore_model(model_id: int, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
     model = session.get(ReeferModel, model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="No se encontró el modelo.")
@@ -376,14 +377,14 @@ def list_machines(
     q: str = "",
     include_archived: bool = False,
     session: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
 ):
     stmt = (
         select(Machine)
         .options(selectinload(Machine.brand), selectinload(Machine.model))
         .order_by(Machine.serial)
     )
-    if not include_archived:
+    if not archived_requested(user, include_archived):
         stmt = stmt.where(Machine.archived.is_(False))
     query = q.strip()
     if query:
@@ -483,7 +484,7 @@ def archive_machine(machine_id: int, session: Session = Depends(get_db), _: User
 
 
 @router.post("/machines/{machine_id}/restore", status_code=204)
-def restore_machine(machine_id: int, session: Session = Depends(get_db), _: User = Depends(require_staff)):
+def restore_machine(machine_id: int, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
     machine = _machine_or_404(session, machine_id)
     machine.archived = False
     session.commit()
@@ -597,13 +598,13 @@ def list_parts(
     include_archived: bool = False,
     limit: int = 50,
     session: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
 ):
     if model_id is None:
         return []
     limit = min(max(limit, 1), 5000)
     stmt = select(SparePart).where(SparePart.model_id == model_id).order_by(SparePart.description).limit(limit)
-    if not include_archived:
+    if not archived_requested(user, include_archived):
         stmt = stmt.where(SparePart.archived.is_(False))
     query = q.strip()
     if query:
@@ -843,7 +844,7 @@ def archive_part(part_id: int, session: Session = Depends(get_db), _: User = Dep
 
 
 @router.post("/spare-parts/{part_id}/restore", status_code=204)
-def restore_part(part_id: int, session: Session = Depends(get_db), _: User = Depends(require_staff)):
+def restore_part(part_id: int, session: Session = Depends(get_db), _: User = Depends(require_superadmin)):
     part = session.get(SparePart, part_id)
     if part is None:
         raise HTTPException(status_code=404, detail="No se encontró el repuesto.")

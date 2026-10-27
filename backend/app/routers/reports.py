@@ -252,6 +252,22 @@ def needs_report(
                 ],
             )
         )
+    grouped: dict[tuple[str, str], list[SerialBlock]] = {}
+    for block in by_serial:
+        grouped.setdefault((block.brand, block.model), []).append(block)
+    inspection_by_id = {inspection.id: inspection for inspection in inspections}
+    models = []
+    for (brand_name, model_name), units in sorted(grouped.items(), key=lambda item: (item[0][0].lower(), item[0][1].lower())):
+        chosen_units = [inspection_by_id[unit.inspection_id] for unit in units]
+        models.append(
+            ModelBlock(
+                brand=brand_name,
+                model=model_name,
+                machines=len({unit.serial for unit in units}),
+                parts=sum_parts(chosen_units),
+                units=units,
+            )
+        )
     by_model = None
     if brand_id is not None or model_id is not None:
         if brand_id is None or model_id is None:
@@ -283,6 +299,7 @@ def needs_report(
         summary=summary_for(inspections),
         by_serial=by_serial,
         by_model=by_model,
+        models=models,
         conglomerate=sum_parts(inspections),
     )
 
@@ -291,7 +308,7 @@ def needs_report(
 def export_needs(
     date_from: date,
     date_to: date,
-    view: str = Query(..., pattern="^(serie|modelo|total)$"),
+    view: str = Query(..., pattern="^(serie|modelo|total|general)$"),
     file_format: str = Query(..., alias="format", pattern="^(pdf|xlsx)$"),
     brand_id: int | None = None,
     model_id: int | None = None,
@@ -303,7 +320,12 @@ def export_needs(
     report = needs_report(date_from, date_to, brand_id, model_id, session, user)
     if view == "modelo" and report.by_model is None:
         raise HTTPException(status_code=400, detail="Elige marca y modelo.")
-    names = {"serie": "necesidad-serie", "modelo": "necesidad-modelo", "total": "conglomerado"}
+    names = {
+        "serie": "necesidad-serie",
+        "modelo": "necesidad-modelo",
+        "total": "conglomerado",
+        "general": "reporte-general",
+    }
     stem = f"{names[view]}-{date_from.isoformat()}-al-{date_to.isoformat()}"
     if file_format == "pdf":
         return file_response(build_needs_pdf(report, view), PDF_MEDIA, f"{stem}.pdf")

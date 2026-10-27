@@ -9,6 +9,7 @@ const TABS = [
   ["serie", "Por serie"],
   ["modelo", "Por marca y modelo"],
   ["total", "Conglomerado"],
+  ["general", "General"],
 ];
 
 function SumTable({ rows }) {
@@ -89,7 +90,7 @@ export default function Reports() {
         params.set("brand_id", brandId);
         params.set("model_id", modelId);
       }
-      const names = { serie: "necesidad-serie", modelo: "necesidad-modelo", total: "conglomerado" };
+      const names = { serie: "necesidad-serie", modelo: "necesidad-modelo", total: "conglomerado", general: "reporte-general" };
       await download(`/api/reports/needs/export?${params}`, `${names[tab]}-${from}-al-${to}.${ext}`);
     } catch (err) {
       setError(err.message);
@@ -99,7 +100,7 @@ export default function Reports() {
   return (
     <Page
       title="Reportes"
-      lede="Para pedir a almacén lo que falta, por serie, por modelo y en conjunto."
+      lede="Para pedir a almacén lo que falta, por serie, por modelo, en conjunto y el general por marca y modelo."
       action={
         <div className="row-actions no-print">
           <button type="button" className="btn ghost" onClick={() => exportFile("xlsx")}>Excel</button>
@@ -179,12 +180,15 @@ export default function Reports() {
                 {tab === "serie" && "Necesidad por serie"}
                 {tab === "modelo" && `Necesidad de ${needs.by_model?.brand || ""} ${needs.by_model?.model || ""}`}
                 {tab === "total" && "Conglomerado de repuestos"}
+                {tab === "general" && "Reporte general"}
               </h2>
               <p>
                 Del {formatInputDate(from)} al {formatInputDate(to)}
                 {tab === "modelo"
                   ? ` · ${needs.by_model?.machines || 0} equipos · ${needs.by_model?.parts.reduce((sum, row) => sum + row.total, 0) || 0} piezas`
-                  : ` · ${needs.summary.inspections} inspecciones · ${needs.summary.parts_total} piezas`}
+                  : tab === "general"
+                    ? ` · ${needs.models?.length || 0} ${needs.models?.length === 1 ? "marca y modelo" : "marcas y modelos"} · ${needs.summary.machines} equipos · ${needs.summary.parts_total} piezas`
+                    : ` · ${needs.summary.inspections} inspecciones · ${needs.summary.parts_total} piezas`}
               </p>
             </div>
           </header>
@@ -236,6 +240,32 @@ export default function Reports() {
             </>
           )}
           {tab === "total" && <SumTable rows={needs.conglomerate} />}
+
+          {tab === "general" && (needs.models || []).map((block) => (
+            <section key={`${block.brand}-${block.model}`} className="model-page">
+              <h2>{block.brand} {block.model}</h2>
+              <p className="muted">{block.machines} equipos · {block.parts.reduce((sum, row) => sum + row.total, 0)} piezas</p>
+              {block.units.map((unit) => (
+                <div key={unit.inspection_id} className="machine-block">
+                  <h3>{unit.serial}</h3>
+                  <p className="muted">
+                    {unit.location || "Sin ubicación"}
+                    {unit.year ? ` · ${unit.year}` : ""}
+                    {" · "}{unit.technician}
+                    {" · "}{formatDateTime(unit.completed_at)}
+                  </p>
+                  {unit.parts.length === 0 && <p>Sin faltantes.</p>}
+                  {unit.parts.map((part) => (
+                    <p key={`${unit.inspection_id}-${part.code}-${part.condition}`}>
+                      <Pill value={part.condition} /> {part.quantity} × {part.description} ({part.code})
+                      {part.note ? ` — ${part.note}` : ""}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </section>
+          ))}
+          {tab === "general" && needs.models?.length === 0 && <Empty title="Sin equipos" text="No hay inspecciones cerradas en ese rango." />}
         </article>
       )}
     </Page>

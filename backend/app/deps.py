@@ -60,3 +60,7 @@ def require(*roles: str) -> Callable:
 require_staff = require(*STAFF)
 require_tecnico = require("tecnico")
 require_superadmin = require("superadmin")
+
+
+def archived_requested(user: User, requested: bool) -> bool:
+    return bool(requested) and user.role == "superadmin"

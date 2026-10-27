@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { api, download } from "../../api";
+import { useAuth } from "../../auth";
 import { useFetch } from "../../format";
 import { Banner, Empty, Field, Modal, Page } from "../../ui";
 
 export default function Parts() {
+  const { user } = useAuth();
+  const canSeeArchived = user?.role === "superadmin";
   const brands = useFetch(() => api("/api/brands"), []);
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
@@ -99,7 +102,9 @@ export default function Parts() {
           <option value="">Modelo</option>
           {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
         </select>
-        <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Archivados</label>
+        {canSeeArchived && (
+          <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Archivados</label>
+        )}
       </div>
       {modelId && (
         <div className="actions" style={{ marginBottom: 14 }}>
@@ -125,7 +130,11 @@ export default function Parts() {
                   <td data-label="Tipo">{row.part_type || "—"}</td>
                   <td className="actions" data-label="">
                     <button type="button" className="btn ghost small" onClick={() => setForm(row)}>Editar</button>
-                    <button type="button" className="btn danger small" onClick={() => toggle(row)}>{row.archived ? "Restaurar" : "Archivar"}</button>
+                    {row.archived ? (
+                      canSeeArchived && <button type="button" className="btn danger small" onClick={() => toggle(row)}>Restaurar</button>
+                    ) : (
+                      <button type="button" className="btn danger small" onClick={() => toggle(row)}>Archivar</button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { api, download } from "../../api";
+import { useAuth } from "../../auth";
 import { useFetch } from "../../format";
 import { Banner, Empty, Field, Modal, Page } from "../../ui";
 
 export default function Brands() {
+  const { user } = useAuth();
+  const canSeeArchived = user?.role === "superadmin";
   const [includeArchived, setIncludeArchived] = useState(false);
   const list = useFetch(() => api(`/api/brands?include_archived=${includeArchived}`), [includeArchived]);
   const [brandForm, setBrandForm] = useState(null);
@@ -95,7 +98,9 @@ export default function Brands() {
         <button type="button" className="btn ghost" onClick={() => download("/api/brands/template", "plantilla-marcas.xlsx").catch((err) => setError(err.message))}>
           Descargar plantilla
         </button>
-        <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivados</label>
+        {canSeeArchived && (
+          <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivados</label>
+        )}
       </div>
       {list.loading && <p>Cargando…</p>}
       {!list.loading && list.data?.length === 0 && <Empty title="Sin marcas" text="Agrega la primera marca y luego sus modelos." />}
@@ -107,7 +112,11 @@ export default function Brands() {
               <div className="actions">
                 <button type="button" className="btn ghost small" onClick={() => setModelForm({ brand_id: brand.id, name: "" })}>Agregar modelo</button>
                 <button type="button" className="btn ghost small" onClick={() => setBrandForm({ id: brand.id, name: brand.name })}>Editar</button>
-                <button type="button" className="btn danger small" onClick={() => toggle("brand", brand)}>{brand.archived ? "Restaurar" : "Archivar"}</button>
+                {brand.archived ? (
+                  canSeeArchived && <button type="button" className="btn danger small" onClick={() => toggle("brand", brand)}>Restaurar</button>
+                ) : (
+                  <button type="button" className="btn danger small" onClick={() => toggle("brand", brand)}>Archivar</button>
+                )}
               </div>
             </header>
             <ul className="model-list">
@@ -116,7 +125,11 @@ export default function Brands() {
                   <span>{model.name}{model.archived ? " · archivado" : ""}</span>
                   <div className="actions">
                     <button type="button" className="btn ghost small" onClick={() => setModelForm({ id: model.id, name: model.name })}>Editar</button>
-                    <button type="button" className="btn danger small" onClick={() => toggle("model", model)}>{model.archived ? "Restaurar" : "Archivar"}</button>
+                    {model.archived ? (
+                      canSeeArchived && <button type="button" className="btn danger small" onClick={() => toggle("model", model)}>Restaurar</button>
+                    ) : (
+                      <button type="button" className="btn danger small" onClick={() => toggle("model", model)}>Archivar</button>
+                    )}
                   </div>
                 </li>
               ))}

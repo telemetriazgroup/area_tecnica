@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api, machinePhotoUrl } from "../../api";
+import { useAuth } from "../../auth";
 import { useFetch } from "../../format";
 import { Banner, Empty, Field, Modal, Page, Pill } from "../../ui";
 
@@ -30,6 +31,8 @@ const blank = {
 };
 
 export default function Machines() {
+  const { user } = useAuth();
+  const canSeeArchived = user?.role === "superadmin";
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -154,7 +157,9 @@ export default function Machines() {
       <form className="filters" onSubmit={(event) => { event.preventDefault(); setQuery(q.trim()); }}>
         <input value={q} placeholder="Buscar serie o ubicación" onChange={(event) => setQ(event.target.value)} />
         <button className="btn ghost" type="submit">Buscar</button>
-        <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivadas</label>
+        {canSeeArchived && (
+          <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivadas</label>
+        )}
       </form>
       {list.loading && <p>Cargando…</p>}
       {!list.loading && list.data?.length === 0 && <Empty title="Sin máquinas" text="Registra la serie que se va a inspeccionar." />}
@@ -175,7 +180,11 @@ export default function Machines() {
                 <td data-label="Revisión">{row.active_assignment ? <Pill value={row.active_assignment.status} /> : "Libre"}</td>
                 <td className="actions" data-label="">
                   <button type="button" className="btn ghost small" onClick={() => openForm(row)}>Editar</button>
-                  <button type="button" className="btn danger small" onClick={() => toggle(row)}>{row.archived ? "Restaurar" : "Archivar"}</button>
+                  {row.archived ? (
+                    canSeeArchived && <button type="button" className="btn danger small" onClick={() => toggle(row)}>Restaurar</button>
+                  ) : (
+                    <button type="button" className="btn danger small" onClick={() => toggle(row)}>Archivar</button>
+                  )}
                 </td>
               </tr>
             ))}

@@ -237,18 +237,20 @@ tr:last-child td { border-bottom: 0; }
   inset: 0;
   background: rgba(16, 28, 48, 0.48);
   display: grid;
-  place-items: end center;
   z-index: 30;
   padding: 12px;
 }
+.modal-back { place-items: center; }
+.drawer-back { place-items: end center; }
 .modal, .drawer {
   width: min(100%, 520px);
   max-height: min(92dvh, 860px);
   overflow: auto;
   background: white;
-  border-radius: 20px 20px 16px 16px;
   padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
 }
+.modal { border-radius: 20px; }
+.drawer { border-radius: 20px 20px 16px 16px; }
 .modal header, .drawer header { display: flex; justify-content: space-between; align-items: center; }
 .modal h2, .drawer h2 { margin: 8px 0; font-size: 1.2rem; }
 
@@ -334,7 +336,15 @@ tr:last-child td { border-bottom: 0; }
   border-radius: 999px;
   min-height: 52px;
   padding: 12px 16px 12px 44px;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--brand);
+  color-scheme: light;
   background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23182c4d' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E") 14px 50% / 20px no-repeat;
+}
+.finder input::placeholder {
+  color: #7d8ba0;
+  -webkit-text-fill-color: #7d8ba0;
 }
 .finder-results { display: grid; gap: 6px; max-height: 240px; overflow: auto; margin-top: 10px; }
 .finder-results p { margin: 4px 2px 0; color: #d5deea; }
@@ -441,6 +451,8 @@ tr:last-child td { border-bottom: 0; }
 .report-head p { margin: 0; color: var(--muted); }
 .machine-block { padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--line); }
 .machine-block h3 { margin: 0 0 4px; }
+.model-page { margin-top: 8px; }
+.model-page h2 { margin-bottom: 2px; }
 
 @media (max-width: 900px) {
   .menu-btn { display: inline-flex; }
@@ -473,6 +485,7 @@ tr:last-child td { border-bottom: 0; }
   .sidebar, .topbar, .no-print, .finish-bar, .tech-bar, .machine-bar, .finder { display: none !important; }
   .layout, .workspace, .content, .phone { display: block; width: auto; max-width: none; padding: 0; background: white; }
   .report-sheet, .card, .stat { box-shadow: none; }
+  .model-page + .model-page { break-before: page; }
   body { background: white; }
 }
 
