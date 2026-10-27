@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
+import { BASE } from "../api";
 import { useAuth } from "../auth";
 import { Banner, Field } from "../ui";
 
@@ -27,8 +28,9 @@ export default function Login() {
 
   return (
     <main className="login-screen">
-      <form className="login-card" onSubmit={onSubmit}>
-        <div className="brand-mark">AT</div>
+      <div className="login-wrap">
+        <img className="login-logo" src={`${BASE}/logo.png`} alt="ZGROUP" />
+        <form className="login-card" onSubmit={onSubmit}>
         <h1>Área técnica</h1>
         <p className="lede">Inspección de reefers de segundo uso.</p>
         <Banner>{error}</Banner>
@@ -52,7 +54,8 @@ export default function Login() {
         <button className="btn block" disabled={busy} type="submit">
           {busy ? "Entrando…" : "Entrar"}
         </button>
-      </form>
+        </form>
+      </div>
     </main>
   );
 }

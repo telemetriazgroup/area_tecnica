@@ -1,10 +1,11 @@
 import { useEffect } from "react";
+import { BASE } from "./api";
 import { STATUS_LABEL } from "./format";
 
 export function Splash() {
   return (
     <div className="splash">
-      <div className="mark">AT</div>
+      <img className="splash-logo" src={`${BASE}/logo.png`} alt="ZGROUP" />
       <p>Área técnica</p>
     </div>
   );
@@ -95,7 +96,7 @@ export function TechBar({ title, onBack, action }) {
           Atrás
         </button>
       ) : (
-        <strong>Área técnica</strong>
+        <img className="tech-logo" src={`${BASE}/logo.png`} alt="ZGROUP" />
       )}
       <h1>{title}</h1>
       {action}

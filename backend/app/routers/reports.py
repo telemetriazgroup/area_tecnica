@@ -2,6 +2,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -29,6 +30,7 @@ from app.schemas import (
     RecentInspection,
     SerialBlock,
 )
+from app.report_export import PDF_MEDIA, XLSX_MEDIA, build_daily_pdf, build_daily_xlsx, build_needs_pdf, build_needs_xlsx
 from app.utils import day_bounds, range_bounds
 
 router = APIRouter(tags=["reportes"])
@@ -192,6 +194,27 @@ def daily_report(
     return DailyReport(date=day, groups=groups)
 
 
+def file_response(payload: bytes, media: str, filename: str) -> Response:
+    return Response(
+        content=payload,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/daily/export")
+def export_daily(
+    day: date = Query(..., alias="date"),
+    file_format: str = Query(..., alias="format", pattern="^(pdf|xlsx)$"),
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    report = daily_report(day, session, user)
+    if file_format == "pdf":
+        return file_response(build_daily_pdf(report), PDF_MEDIA, f"inspecciones-{day.isoformat()}.pdf")
+    return file_response(build_daily_xlsx(report), XLSX_MEDIA, f"inspecciones-{day.isoformat()}.xlsx")
+
+
 @router.get("/reports/needs", response_model=NeedsReport)
 def needs_report(
     date_from: date,
@@ -257,3 +280,26 @@ def needs_report(
         by_model=by_model,
         conglomerate=sum_parts(inspections),
     )
+
+
+@router.get("/reports/needs/export")
+def export_needs(
+    date_from: date,
+    date_to: date,
+    view: str = Query(..., pattern="^(serie|modelo|total)$"),
+    file_format: str = Query(..., alias="format", pattern="^(pdf|xlsx)$"),
+    brand_id: int | None = None,
+    model_id: int | None = None,
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    if view == "modelo" and (brand_id is None or model_id is None):
+        raise HTTPException(status_code=400, detail="Elige marca y modelo.")
+    report = needs_report(date_from, date_to, brand_id, model_id, session, user)
+    if view == "modelo" and report.by_model is None:
+        raise HTTPException(status_code=400, detail="Elige marca y modelo.")
+    names = {"serie": "necesidad-serie", "modelo": "necesidad-modelo", "total": "conglomerado"}
+    stem = f"{names[view]}-{date_from.isoformat()}-al-{date_to.isoformat()}"
+    if file_format == "pdf":
+        return file_response(build_needs_pdf(report, view), PDF_MEDIA, f"{stem}.pdf")
+    return file_response(build_needs_xlsx(report, view), XLSX_MEDIA, f"{stem}.xlsx")

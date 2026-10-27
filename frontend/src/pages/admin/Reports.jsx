@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../../api";
+import { BASE, api, download } from "../../api";
 import { formatDateTime, formatDuration, formatInputDate, monthStartInput, todayInput, useFetch } from "../../format";
 import { Banner, Empty, Page, Pill } from "../../ui";
 
@@ -75,11 +75,38 @@ export default function Reports() {
     }
   }
 
+  async function exportFile(format) {
+    setError("");
+    const ext = format === "pdf" ? "pdf" : "xlsx";
+    try {
+      if (tab === "dia") {
+        await download(`/api/reports/daily/export?date=${day}&format=${format}`, `inspecciones-${day}.${ext}`);
+        return;
+      }
+      if (tab === "modelo" && (!brandId || !modelId)) throw new Error("Elige marca y modelo.");
+      const params = new URLSearchParams({ date_from: from, date_to: to, format, view: tab });
+      if (tab === "modelo") {
+        params.set("brand_id", brandId);
+        params.set("model_id", modelId);
+      }
+      const names = { serie: "necesidad-serie", modelo: "necesidad-modelo", total: "conglomerado" };
+      await download(`/api/reports/needs/export?${params}`, `${names[tab]}-${from}-al-${to}.${ext}`);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <Page
       title="Reportes"
       lede="Para pedir a almacén lo que falta, por serie, por modelo y en conjunto."
-      action={<button type="button" className="btn no-print" onClick={() => window.print()}>Imprimir</button>}
+      action={
+        <div className="row-actions no-print">
+          <button type="button" className="btn ghost" onClick={() => exportFile("xlsx")}>Excel</button>
+          <button type="button" className="btn ghost" onClick={() => exportFile("pdf")}>PDF</button>
+          <button type="button" className="btn" onClick={() => window.print()}>Imprimir</button>
+        </div>
+      }
     >
       <div className="tabs no-print">
         {TABS.map(([id, label]) => (
@@ -116,9 +143,12 @@ export default function Reports() {
       {tab === "dia" && daily && (
         <article className="report-sheet">
           <header className="report-head">
-            <p>Área técnica</p>
-            <h2>Máquinas inspeccionadas</h2>
-            <p>{formatInputDate(day)}</p>
+            <img src={`${BASE}/logo.png`} alt="ZGROUP" />
+            <div>
+              <p>Área técnica</p>
+              <h2>Máquinas inspeccionadas</h2>
+              <p>{formatInputDate(day)}</p>
+            </div>
           </header>
           {daily.groups.length === 0 && <Empty title="Sin revisiones" text="Ese día no se cerró ninguna inspección." />}
           {daily.groups.map((group) => (
@@ -142,13 +172,16 @@ export default function Reports() {
       {tab !== "dia" && needs && (
         <article className="report-sheet">
           <header className="report-head">
-            <p>Área técnica · pedido a almacén</p>
-            <h2>
-              {tab === "serie" && "Necesidad por serie"}
-              {tab === "modelo" && `Necesidad de ${needs.by_model?.brand || ""} ${needs.by_model?.model || ""}`}
-              {tab === "total" && "Conglomerado de repuestos"}
-            </h2>
-            <p>Del {formatInputDate(from)} al {formatInputDate(to)} · {needs.summary.inspections} inspecciones · {needs.summary.parts_total} piezas</p>
+            <img src={`${BASE}/logo.png`} alt="ZGROUP" />
+            <div>
+              <p>Área técnica · pedido a almacén</p>
+              <h2>
+                {tab === "serie" && "Necesidad por serie"}
+                {tab === "modelo" && `Necesidad de ${needs.by_model?.brand || ""} ${needs.by_model?.model || ""}`}
+                {tab === "total" && "Conglomerado de repuestos"}
+              </h2>
+              <p>Del {formatInputDate(from)} al {formatInputDate(to)} · {needs.summary.inspections} inspecciones · {needs.summary.parts_total} piezas</p>
+            </div>
           </header>
 
           {tab === "serie" && needs.by_serial.map((block) => (

@@ -8,3 +8,4 @@ bcrypt>=4.2,<5
 python-multipart>=0.0.17
 pillow>=11,<12
 openpyxl>=3.1,<4
+fpdf2>=2.8,<3

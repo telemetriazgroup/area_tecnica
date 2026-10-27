@@ -77,7 +77,12 @@ export async function download(path, filename) {
     headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
     credentials: "include",
   });
-  if (!response.ok) throw new Error("No se pudo descargar el archivo.");
+  if (!response.ok) {
+    const isJson = (response.headers.get("content-type") || "").includes("application/json");
+    const data = isJson ? await response.json().catch(() => ({})) : null;
+    const detail = data?.detail;
+    throw new Error(typeof detail === "string" ? detail : "No se pudo descargar el archivo.");
+  }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

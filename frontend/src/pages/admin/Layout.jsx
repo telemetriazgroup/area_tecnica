@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { BASE } from "../../api";
 import { useAuth } from "../../auth";
 import { ROLE_LABEL } from "../../format";
 
@@ -29,7 +30,7 @@ export default function AdminLayout() {
     <div className="layout">
       <aside className={open ? "sidebar open" : "sidebar"}>
         <div className="brand">
-          <div className="mark">AT</div>
+          <img src={`${BASE}/logo.png`} alt="ZGROUP" />
           <div>
             <strong>Área técnica</strong>
             <span>Reefers de segundo uso</span>
