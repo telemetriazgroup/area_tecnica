@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, machinePhotoUrl } from "../../api";
 import { useAuth } from "../../auth";
-import { useFetch } from "../../format";
+import { MACHINE_STATUS_LABEL, useFetch } from "../../format";
 import { Banner, Empty, Field, Modal, Page, Pill } from "../../ui";
 
 function PhotoField({ label, hint, preview, onPick, onClear }) {
@@ -22,6 +22,7 @@ const blank = {
   model_id: "",
   location: "",
   year: "",
+  machine_status: "stock",
   machineFile: null,
   serialFile: null,
   machinePreview: "",
@@ -36,9 +37,14 @@ export default function Machines() {
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [status, setStatus] = useState("");
   const list = useFetch(
-    () => api(`/api/machines?include_archived=${includeArchived}&q=${encodeURIComponent(query)}`),
-    [includeArchived, query],
+    () => {
+      const params = new URLSearchParams({ include_archived: String(includeArchived), q: query });
+      if (status) params.set("status", status);
+      return api(`/api/machines?${params.toString()}`);
+    },
+    [includeArchived, query, status],
   );
   const brands = useFetch(() => api("/api/brands?include_archived=true"), []);
   const [form, setForm] = useState(null);
@@ -103,6 +109,7 @@ export default function Machines() {
       model_id: Number(form.model_id),
       location: form.location || null,
       year: form.year === "" ? null : Number(form.year),
+      machine_status: form.machine_status || "stock",
     };
     let saved = null;
     try {
@@ -156,6 +163,11 @@ export default function Machines() {
       <Banner>{error || list.error}</Banner>
       <form className="filters" onSubmit={(event) => { event.preventDefault(); setQuery(q.trim()); }}>
         <input value={q} placeholder="Buscar serie o ubicación" onChange={(event) => setQ(event.target.value)} />
+        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Estatus de máquina">
+          <option value="">Todos los estatus</option>
+          <option value="stock">Stock</option>
+          <option value="asignado">Asignado</option>
+        </select>
         <button className="btn ghost" type="submit">Buscar</button>
         {canSeeArchived && (
           <label className="check"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Mostrar archivadas</label>
@@ -166,7 +178,7 @@ export default function Machines() {
       <div className="table-wrap">
         <table className="data">
           <thead>
-            <tr><th>Serie</th><th>Marca</th><th>Modelo</th><th>Ubicación</th><th>Año</th><th>Fotos</th><th>Revisión</th><th></th></tr>
+            <tr><th>Serie</th><th>Marca</th><th>Modelo</th><th>Ubicación</th><th>Año</th><th>Estatus</th><th>Fotos</th><th>Revisión</th><th></th></tr>
           </thead>
           <tbody>
             {list.data?.map((row) => (
@@ -176,6 +188,7 @@ export default function Machines() {
                 <td data-label="Modelo">{row.model_name}</td>
                 <td data-label="Ubicación">{row.location || "—"}</td>
                 <td data-label="Año">{row.year || "—"}</td>
+                <td data-label="Estatus"><Pill value={row.machine_status} label={MACHINE_STATUS_LABEL[row.machine_status]} /></td>
                 <td data-label="Fotos">{[row.has_machine_photo ? "Máquina" : "", row.has_serial_photo ? "Serie" : ""].filter(Boolean).join(" · ") || "—"}</td>
                 <td data-label="Revisión">{row.active_assignment ? <Pill value={row.active_assignment.status} /> : "Libre"}</td>
                 <td className="actions" data-label="">
@@ -222,6 +235,12 @@ export default function Machines() {
             </Field>
             <Field label="Año" hint="Opcional.">
               <input type="number" min="1980" max="2100" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} />
+            </Field>
+            <Field label="Estatus" hint="Stock es una máquina libre. Asignado queda marcado al entregarla a un técnico.">
+              <select value={form.machine_status || "stock"} onChange={(event) => setForm({ ...form, machine_status: event.target.value })}>
+                <option value="stock">Stock</option>
+                <option value="asignado">Asignado</option>
+              </select>
             </Field>
             <PhotoField
               label="Foto de la máquina"

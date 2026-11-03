@@ -8,6 +8,7 @@ from app.models import (
     Assignment,
     Brand,
     Inspection,
+    InspectionEvent,
     InspectionItem,
     Machine,
     ReeferModel,
@@ -122,6 +123,7 @@ def seed(session: Session) -> None:
         model_id=carrier_model.id,
         location="Patio B",
         year=2016,
+        machine_status="asignado",
     )
     reviewed = Machine(
         serial="RFFU7654321",
@@ -164,12 +166,23 @@ def seed(session: Session) -> None:
         assignment_id=done.id,
         machine_id=reviewed.id,
         technician_id=tech_juan.id,
+        assigned_technician_id=tech_maria.id,
         status="completada",
+        work_status="reparado",
         started_at=now - timedelta(hours=2),
         completed_at=now,
     )
     session.add(inspection)
     session.flush()
+    session.add(
+        InspectionEvent(
+            inspection_id=inspection.id,
+            status="reparado",
+            note="Equipo reparado en patio. Lista de repuestos cerrada.",
+            created_by_id=encargado.id,
+            created_at=now,
+        )
+    )
 
     parts = {
         part.code: part

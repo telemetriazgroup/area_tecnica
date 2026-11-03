@@ -97,6 +97,7 @@ class Machine(Base):
     year: Mapped[int | None] = mapped_column(Integer)
     machine_photo: Mapped[str | None] = mapped_column(String(80))
     serial_photo: Mapped[str | None] = mapped_column(String(80))
+    machine_status: Mapped[str] = mapped_column(String(20), index=True, default="stock", server_default="stock")
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -141,14 +142,22 @@ class Inspection(Base):
     assignment_id: Mapped[int] = mapped_column(ForeignKey("assignments.id"), unique=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
     technician_id: Mapped[int] = mapped_column(ForeignKey("technicians.id"), index=True)
+    assigned_technician_id: Mapped[int | None] = mapped_column(ForeignKey("technicians.id"), index=True)
     status: Mapped[str] = mapped_column(String(20), index=True, default="en_proceso")
+    work_status: Mapped[str] = mapped_column(String(20), index=True, default="programado", server_default="programado")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     assignment: Mapped[Assignment] = relationship(back_populates="inspection")
     machine: Mapped[Machine] = relationship()
-    technician: Mapped[Technician] = relationship()
+    technician: Mapped[Technician] = relationship(foreign_keys=[technician_id])
+    assigned_technician: Mapped[Technician | None] = relationship(foreign_keys=[assigned_technician_id])
     items: Mapped[list[InspectionItem]] = relationship(back_populates="inspection", cascade="all, delete-orphan")
+    events: Mapped[list[InspectionEvent]] = relationship(
+        back_populates="inspection",
+        cascade="all, delete-orphan",
+        order_by="InspectionEvent.id",
+    )
 
 
 class InspectionItem(Base):
@@ -166,6 +175,32 @@ class InspectionItem(Base):
     inspection: Mapped[Inspection] = relationship(back_populates="items")
     spare_part: Mapped[SparePart] = relationship()
     photos: Mapped[list[InspectionPhoto]] = relationship(back_populates="item", cascade="all, delete-orphan")
+
+
+class InspectionEvent(Base):
+    __tablename__ = "inspection_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey("inspections.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    inspection: Mapped[Inspection] = relationship(back_populates="events")
+    author: Mapped[User | None] = relationship()
+    photos: Mapped[list[InspectionEventPhoto]] = relationship(back_populates="event", cascade="all, delete-orphan")
+
+
+class InspectionEventPhoto(Base):
+    __tablename__ = "inspection_event_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("inspection_events.id"), index=True)
+    filename: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    event: Mapped[InspectionEvent] = relationship(back_populates="photos")
 
 
 class InspectionPhoto(Base):

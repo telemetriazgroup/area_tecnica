@@ -72,6 +72,18 @@ export const STATUS_LABEL = {
   cancelada: "Cancelada",
 };
 
+export const MACHINE_STATUS_LABEL = {
+  stock: "Stock",
+  asignado: "Asignado",
+};
+
+export const WORK_STATUS_LABEL = {
+  programado: "Programado",
+  en_proceso: "En proceso",
+  reparado: "Reparado",
+  todos: "Todos",
+};
+
 export const ROLE_LABEL = {
   superadmin: "Superadmin",
   encargado: "Encargado",

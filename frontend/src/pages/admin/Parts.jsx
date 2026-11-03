@@ -114,6 +114,7 @@ export default function Parts() {
             <input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden onChange={upload} />
           </label>
           <button type="button" className="btn ghost" onClick={() => download("/api/spare-parts/template", "plantilla-repuestos.xlsx").catch((err) => setError(err.message))}>Descargar plantilla</button>
+          <button type="button" className="btn ghost" onClick={() => download(`/api/spare-parts/export?model_id=${modelId}&include_archived=${includeArchived}`, "repuestos.xlsx").catch((err) => setError(err.message))}>Excel</button>
         </div>
       )}
       {!modelId && <Empty title="Elige marca y modelo" text="Después puedes cargar un repuesto o una lista completa." />}

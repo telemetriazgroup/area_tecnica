@@ -74,6 +74,7 @@ class MachineIn(BaseModel):
     model_id: int
     location: str | None = Field(default=None, max_length=160)
     year: int | None = Field(default=None, ge=1980, le=2100)
+    machine_status: str = "stock"
 
 
 class AssignmentBrief(BaseModel):
@@ -92,6 +93,7 @@ class MachineOut(BaseModel):
     model_name: str
     location: str | None
     year: int | None
+    machine_status: str = "stock"
     archived: bool
     has_machine_photo: bool = False
     has_serial_photo: bool = False
@@ -194,25 +196,49 @@ class ItemOut(BaseModel):
     photos: list[PhotoOut]
 
 
+class EventPhotoOut(BaseModel):
+    id: int
+
+
+class InspectionEventOut(BaseModel):
+    id: int
+    status: str
+    note: str | None
+    author_name: str | None
+    created_at: datetime
+    photos: list[EventPhotoOut]
+
+
+class InspectionTechnicianUpdate(BaseModel):
+    technician_id: int | None = None
+
+
 class InspectionOut(BaseModel):
     id: int
     assignment_id: int
     status: str
+    work_status: str
     assigned_at: datetime
     started_at: datetime
     completed_at: datetime | None
     technician_name: str
+    assigned_technician_id: int | None = None
+    assigned_technician_name: str | None = None
     machine: MachineBrief
     items: list[ItemOut]
+    events: list[InspectionEventOut] = []
 
 
 class InspectionSummary(BaseModel):
     id: int
     status: str
+    work_status: str
     assigned_at: datetime
     started_at: datetime
     completed_at: datetime | None
     technician_name: str
+    assigned_technician_id: int | None = None
+    assigned_technician_name: str | None = None
     serial: str
     brand: str
     model: str
@@ -226,11 +252,19 @@ class ItemUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=800)
 
 
+class ConditionTotal(BaseModel):
+    key: str
+    label: str
+    quantity: int
+
+
 class RecentInspection(BaseModel):
     id: int
     serial: str
     technician_name: str
+    assigned_technician_name: str | None = None
     status: str
+    work_status: str = "programado"
     assigned_at: datetime
     started_at: datetime
     completed_at: datetime | None
@@ -238,6 +272,18 @@ class RecentInspection(BaseModel):
 
 
 class DashboardOut(BaseModel):
+    period: str = "day"
+    period_from: date | None = None
+    period_to: date | None = None
+    stock_machines: int = 0
+    assigned_machines: int = 0
+    programmed: int = 0
+    in_process_inspections: int = 0
+    inspections_in_period: int = 0
+    repaired_in_period: int = 0
+    parts_in_period: int = 0
+    follows_in_period: int = 0
+    parts_by_condition: list[ConditionTotal] = []
     pending_assignments: int
     in_progress: int
     unassigned_machines: int
@@ -302,7 +348,7 @@ class SerialBlock(BaseModel):
     location: str | None
     year: int | None
     technician: str
-    completed_at: datetime
+    completed_at: datetime | None
     parts: list[PartLine]
 
 
@@ -323,6 +369,7 @@ class NeedsSummary(BaseModel):
 class NeedsReport(BaseModel):
     date_from: date
     date_to: date
+    work_status: str = ""
     summary: NeedsSummary
     by_serial: list[SerialBlock]
     by_model: ModelBlock | None

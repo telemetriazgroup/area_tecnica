@@ -9,11 +9,12 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.constants import OPEN_ASSIGNMENT, STAFF
+from app.constants import MACHINE_STATUSES, OPEN_ASSIGNMENT, STAFF
 from app.deps import archived_requested, get_current_user, get_db, require_staff, require_superadmin
 from app.documents import replace_pdf
 from app.models import Assignment, Brand, Machine, ReeferModel, SparePart, User
 from app.photos import photo_path, remove_file, save_image
+from app.report_export import XLSX_MEDIA, build_catalog_xlsx
 from app.schemas import (
     AssignmentBrief,
     BrandOut,
@@ -117,6 +118,7 @@ def to_machine(machine: Machine, assignment: Assignment | None) -> MachineOut:
         model_name=machine.model.name,
         location=machine.location,
         year=machine.year,
+        machine_status=machine.machine_status,
         archived=machine.archived,
         has_machine_photo=bool(machine.machine_photo),
         has_serial_photo=bool(machine.serial_photo),
@@ -380,9 +382,33 @@ def restore_model(model_id: int, session: Session = Depends(get_db), _: User = D
     session.commit()
 
 
+def check_machine_status(status: str) -> str:
+    if status not in MACHINE_STATUSES:
+        raise HTTPException(status_code=400, detail="El estatus de la máquina debe ser stock o asignado.")
+    return status
+
+
+def set_machine_status(session: Session, machine_id: int, status: str) -> None:
+    machine = session.get(Machine, machine_id)
+    if machine is not None:
+        machine.machine_status = status
+
+
+def release_machine(session: Session, machine_id: int) -> None:
+    open_job = session.scalar(
+        select(Assignment.id).where(
+            Assignment.machine_id == machine_id,
+            Assignment.status.in_(OPEN_ASSIGNMENT),
+        )
+    )
+    if open_job is None:
+        set_machine_status(session, machine_id, "stock")
+
+
 @router.get("/machines", response_model=list[MachineOut])
 def list_machines(
     q: str = "",
+    status: str = "",
     include_archived: bool = False,
     session: Session = Depends(get_db),
     user: User = Depends(require_staff),
@@ -394,6 +420,8 @@ def list_machines(
     )
     if not archived_requested(user, include_archived):
         stmt = stmt.where(Machine.archived.is_(False))
+    if status:
+        stmt = stmt.where(Machine.machine_status == check_machine_status(status))
     query = q.strip()
     if query:
         stmt = stmt.where(or_(ilike(Machine.serial, query), ilike(Machine.location, query)))
@@ -422,6 +450,7 @@ def create_machine(payload: MachineIn, session: Session = Depends(get_db), _: Us
         model_id=model.id,
         location=clean(payload.location),
         year=payload.year,
+        machine_status=check_machine_status(payload.machine_status),
     )
     session.add(machine)
     commit_or_conflict(session, "Esa serie ya está registrada.")
@@ -455,6 +484,13 @@ def update_machine(
     machine.model_id = model.id
     machine.location = clean(payload.location)
     machine.year = payload.year
+    next_status = check_machine_status(payload.machine_status)
+    open_job = session.scalar(
+        select(Assignment.id).where(Assignment.machine_id == machine.id, Assignment.status.in_(OPEN_ASSIGNMENT))
+    )
+    if open_job and next_status == "stock":
+        raise HTTPException(status_code=400, detail="Esta máquina tiene una revisión abierta. No puede volver a stock.")
+    machine.machine_status = next_status
     commit_or_conflict(session, "Esa serie ya está registrada.")
     machine = session.scalar(
         select(Machine)
@@ -618,6 +654,49 @@ def list_parts(
     if query:
         stmt = stmt.where(or_(ilike(SparePart.description, query), ilike(SparePart.code, query)))
     return [to_part(part) for part in session.scalars(stmt).all()]
+
+
+@router.get("/spare-parts/export")
+def export_parts(
+    model_id: int | None = None,
+    include_archived: bool = False,
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    stmt = (
+        select(SparePart)
+        .options(selectinload(SparePart.model).selectinload(ReeferModel.brand))
+        .order_by(SparePart.description)
+    )
+    if model_id is not None:
+        stmt = stmt.where(SparePart.model_id == model_id)
+    if not archived_requested(user, include_archived):
+        stmt = stmt.where(SparePart.archived.is_(False))
+    rows = []
+    for part in session.scalars(stmt).all():
+        model = part.model
+        rows.append(
+            [
+                model.brand.name if model and model.brand else "",
+                model.name if model else "",
+                part.code,
+                part.description,
+                part.part_type or "",
+                "Archivado" if part.archived else "Activo",
+            ]
+        )
+    subtitle = "Del modelo seleccionado" if model_id is not None else "Catálogo completo"
+    return Response(
+        content=build_catalog_xlsx(
+            "Repuestos",
+            subtitle,
+            "Repuestos",
+            ["Marca", "Modelo", "Serie", "Descripción", "Tipo", "Estado"],
+            rows,
+        ),
+        media_type=XLSX_MEDIA,
+        headers={"Content-Disposition": 'attachment; filename="repuestos.xlsx"'},
+    )
 
 
 @router.post("/spare-parts", response_model=SparePartOut, status_code=201)

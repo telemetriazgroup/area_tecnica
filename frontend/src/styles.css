@@ -224,7 +224,15 @@ tr:last-child td { border-bottom: 0; }
 .pill.faltante, .pill.cambio, .pill.pendiente { background: var(--warn-bg); color: var(--warn); }
 .pill.inoperativo, .pill.desinstalacion, .pill.cancelada { background: var(--danger-bg); color: var(--danger); }
 .pill.incompleto, .pill.instalacion, .pill.en_proceso { background: var(--info-bg); color: var(--info); }
-.pill.completada { background: #e5f6ec; color: var(--ok); }
+.pill.completada, .pill.reparado, .pill.stock { background: #e5f6ec; color: var(--ok); }
+.pill.programado, .pill.asignado { background: var(--warn-bg); color: var(--warn); }
+.kpi-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; margin: 8px 0 12px; }
+.kpi-head h2 { margin: 0; }
+.period-switch { display: flex; flex-wrap: wrap; gap: 6px; }
+.timeline { display: grid; margin-top: 8px; }
+.timeline article { position: relative; margin-left: 8px; padding: 0 0 16px 16px; border-left: 3px solid var(--line); }
+.timeline article:last-child { padding-bottom: 0; }
+.timeline .dot { position: absolute; left: -7px; top: 4px; width: 11px; height: 11px; border-radius: 50%; background: var(--brand); }
 
 .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
 .empty strong { display: block; color: var(--ink); margin-bottom: 4px; }

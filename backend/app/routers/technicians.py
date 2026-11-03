@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.constants import OPEN_ASSIGNMENT
 from app.deps import archived_requested, get_db, require_staff, require_superadmin
 from app.models import Assignment, Technician, User
+from app.report_export import XLSX_MEDIA, build_catalog_xlsx
 from app.schemas import BulkResult, TechnicianIn, TechnicianOut
 from app.utils import clean, commit_or_conflict, fold, ilike
 
@@ -72,6 +73,31 @@ def list_technicians(
             or_(ilike(Technician.name, query), ilike(Technician.dni, query), ilike(User.username, query))
         )
     return [to_technician(tech) for tech in session.scalars(stmt).all()]
+
+
+@router.get("/export")
+def export_technicians(
+    q: str = "",
+    include_archived: bool = False,
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    rows = list_technicians(q, include_archived, session, user)
+    table = [
+        [row.name, row.cargo or "", row.dni or "", row.phone or "", row.username or "", "Archivado" if row.archived else "Activo"]
+        for row in rows
+    ]
+    return Response(
+        content=build_catalog_xlsx(
+            "Técnicos",
+            "Lista del área técnica",
+            "Técnicos",
+            ["Nombre", "Cargo", "DNI", "Número", "Usuario", "Estado"],
+            table,
+        ),
+        media_type=XLSX_MEDIA,
+        headers={"Content-Disposition": 'attachment; filename="tecnicos.xlsx"'},
+    )
 
 
 @router.post("", response_model=TechnicianOut, status_code=201)

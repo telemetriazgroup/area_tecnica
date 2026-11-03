@@ -1,18 +1,19 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
-from app.constants import OPEN_ASSIGNMENT
+from app.constants import OPEN_ASSIGNMENT, WORK_STATUSES
 from app.deps import get_db, require_staff
 from app.models import (
     Assignment,
     ConditionOption,
     Inspection,
+    InspectionEvent,
     InspectionItem,
     Machine,
     ReeferModel,
@@ -20,6 +21,7 @@ from app.models import (
 )
 from app.schemas import (
     ConditionOut,
+    ConditionTotal,
     DailyGroup,
     DailyInspection,
     DailyReport,
@@ -38,6 +40,30 @@ from app.utils import day_bounds, range_bounds
 router = APIRouter(tags=["reportes"])
 
 
+def period_bounds(period: str) -> tuple[str, date, date, datetime, datetime]:
+    if period not in {"day", "week", "month"}:
+        raise HTTPException(status_code=400, detail="El período debe ser día, semana o mes.")
+    today = datetime.now(ZoneInfo(settings.timezone)).date()
+    if period == "week":
+        start_day = today - timedelta(days=today.weekday())
+    elif period == "month":
+        start_day = today.replace(day=1)
+    else:
+        start_day = today
+    start, end = range_bounds(start_day, today)
+    return period, start_day, today, start, end
+
+
+def inspection_options():
+    return (
+        selectinload(Inspection.items).selectinload(InspectionItem.spare_part),
+        selectinload(Inspection.machine).selectinload(Machine.brand),
+        selectinload(Inspection.machine).selectinload(Machine.model),
+        selectinload(Inspection.technician),
+        selectinload(Inspection.assignment),
+    )
+
+
 def load_completed(session: Session, start, end) -> list[Inspection]:
     return list(
         session.scalars(
@@ -47,16 +73,25 @@ def load_completed(session: Session, start, end) -> list[Inspection]:
                 Inspection.completed_at >= start,
                 Inspection.completed_at < end,
             )
-            .options(
-                selectinload(Inspection.items).selectinload(InspectionItem.spare_part),
-                selectinload(Inspection.machine).selectinload(Machine.brand),
-                selectinload(Inspection.machine).selectinload(Machine.model),
-                selectinload(Inspection.technician),
-                selectinload(Inspection.assignment),
-            )
+            .options(*inspection_options())
             .order_by(Inspection.completed_at)
         ).all()
     )
+
+
+def load_needs_inspections(session: Session, start, end, work_status: str) -> list[Inspection]:
+    if not work_status:
+        return load_completed(session, start, end)
+    if work_status != "todos" and work_status not in WORK_STATUSES:
+        raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+    activity = or_(
+        and_(Inspection.completed_at.is_not(None), Inspection.completed_at >= start, Inspection.completed_at < end),
+        and_(Inspection.started_at >= start, Inspection.started_at < end),
+    )
+    stmt = select(Inspection).where(activity).options(*inspection_options()).order_by(Inspection.started_at)
+    if work_status != "todos":
+        stmt = stmt.where(Inspection.work_status == work_status)
+    return list(session.scalars(stmt).all())
 
 
 def load_conditions(session: Session) -> list[ConditionOut]:
@@ -98,7 +133,12 @@ def summary_for(inspections: list[Inspection]) -> NeedsSummary:
 
 
 @router.get("/dashboard", response_model=DashboardOut)
-def dashboard(session: Session = Depends(get_db), _: User = Depends(require_staff)):
+def dashboard(
+    period: str = "day",
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    period, period_from, period_to, start, end = period_bounds(period)
     pending = session.scalar(
         select(func.count()).select_from(Assignment).where(Assignment.status == "pendiente")
     )
@@ -113,8 +153,7 @@ def dashboard(session: Session = Depends(get_db), _: User = Depends(require_staf
     unassigned = session.scalar(
         select(func.count()).select_from(Machine).where(Machine.archived.is_(False), ~open_exists)
     )
-    today = datetime.now(ZoneInfo(settings.timezone)).date()
-    start, end = day_bounds(today)
+    today = period_to
     inspected_today = session.scalar(
         select(func.count())
         .select_from(Inspection)
@@ -139,6 +178,7 @@ def dashboard(session: Session = Depends(get_db), _: User = Depends(require_staf
         .options(
             selectinload(Inspection.machine),
             selectinload(Inspection.technician),
+            selectinload(Inspection.assigned_technician),
             selectinload(Inspection.assignment),
             selectinload(Inspection.items),
         )
@@ -150,7 +190,9 @@ def dashboard(session: Session = Depends(get_db), _: User = Depends(require_staf
             id=row.id,
             serial=row.machine.serial,
             technician_name=row.technician.name,
+            assigned_technician_name=row.assigned_technician.name if row.assigned_technician else None,
             status=row.status,
+            work_status=row.work_status,
             assigned_at=row.assignment.created_at,
             started_at=row.started_at,
             completed_at=row.completed_at,
@@ -158,7 +200,90 @@ def dashboard(session: Session = Depends(get_db), _: User = Depends(require_staf
         )
         for row in recent_rows
     ]
+    def count_machines(status: str) -> int:
+        value = session.scalar(
+            select(func.count())
+            .select_from(Machine)
+            .where(Machine.archived.is_(False), Machine.machine_status == status)
+        )
+        return value or 0
+
+    def count_work(status: str) -> int:
+        value = session.scalar(
+            select(func.count()).select_from(Inspection).where(Inspection.work_status == status)
+        )
+        return value or 0
+
+    inspections_in_period = session.scalar(
+        select(func.count())
+        .select_from(Inspection)
+        .where(Inspection.started_at >= start, Inspection.started_at < end)
+    )
+    repaired_by_event = (
+        select(InspectionEvent.inspection_id)
+        .where(
+            InspectionEvent.status == "reparado",
+            InspectionEvent.created_at >= start,
+            InspectionEvent.created_at < end,
+        )
+    )
+    repaired_in_period = session.scalar(
+        select(func.count())
+        .select_from(Inspection)
+        .where(
+            or_(
+                Inspection.id.in_(repaired_by_event),
+                and_(
+                    Inspection.work_status == "reparado",
+                    Inspection.completed_at.is_not(None),
+                    Inspection.completed_at >= start,
+                    Inspection.completed_at < end,
+                ),
+            )
+        )
+    )
+    parts_in_period = session.scalar(
+        select(func.coalesce(func.sum(InspectionItem.quantity), 0))
+        .select_from(InspectionItem)
+        .join(Inspection, InspectionItem.inspection_id == Inspection.id)
+        .where(Inspection.started_at >= start, Inspection.started_at < end)
+    )
+    follows_in_period = session.scalar(
+        select(func.count())
+        .select_from(InspectionEvent)
+        .where(InspectionEvent.created_at >= start, InspectionEvent.created_at < end)
+    )
+    condition_rows = session.execute(
+        select(InspectionItem.condition, func.coalesce(func.sum(InspectionItem.quantity), 0))
+        .join(Inspection, InspectionItem.inspection_id == Inspection.id)
+        .where(Inspection.started_at >= start, Inspection.started_at < end)
+        .group_by(InspectionItem.condition)
+    ).all()
+    quantities = {key: int(qty or 0) for key, qty in condition_rows}
+    conditions = load_conditions(session)
+    known = {item.key for item in conditions}
+    parts_by_condition = [
+        ConditionTotal(key=item.key, label=item.label, quantity=quantities.get(item.key, 0))
+        for item in conditions
+    ]
+    parts_by_condition.extend(
+        ConditionTotal(key=key, label=key, quantity=qty)
+        for key, qty in quantities.items()
+        if key not in known
+    )
     return DashboardOut(
+        period=period,
+        period_from=period_from,
+        period_to=period_to,
+        stock_machines=count_machines("stock"),
+        assigned_machines=count_machines("asignado"),
+        programmed=count_work("programado"),
+        in_process_inspections=count_work("en_proceso"),
+        inspections_in_period=inspections_in_period or 0,
+        repaired_in_period=repaired_in_period or 0,
+        parts_in_period=int(parts_in_period or 0),
+        follows_in_period=follows_in_period or 0,
+        parts_by_condition=parts_by_condition,
         pending_assignments=pending or 0,
         in_progress=in_progress or 0,
         unassigned_machines=unassigned or 0,
@@ -225,13 +350,14 @@ def needs_report(
     date_to: date,
     brand_id: int | None = None,
     model_id: int | None = None,
+    work_status: str = "",
     session: Session = Depends(get_db),
     _: User = Depends(require_staff),
 ):
     start, end = range_bounds(date_from, date_to)
     conditions = load_conditions(session)
     keys = [item.key for item in conditions]
-    inspections = load_completed(session, start, end)
+    inspections = load_needs_inspections(session, start, end, work_status)
     by_serial = []
     for inspection in inspections:
         machine = inspection.machine
@@ -302,6 +428,7 @@ def needs_report(
     return NeedsReport(
         date_from=date_from,
         date_to=date_to,
+        work_status=work_status,
         summary=summary_for(inspections),
         by_serial=by_serial,
         by_model=by_model,
@@ -319,12 +446,13 @@ def export_needs(
     file_format: str = Query(..., alias="format", pattern="^(pdf|xlsx)$"),
     brand_id: int | None = None,
     model_id: int | None = None,
+    work_status: str = "",
     session: Session = Depends(get_db),
     user: User = Depends(require_staff),
 ):
     if view == "modelo" and (brand_id is None or model_id is None):
         raise HTTPException(status_code=400, detail="Elige marca y modelo.")
-    report = needs_report(date_from, date_to, brand_id, model_id, session, user)
+    report = needs_report(date_from, date_to, brand_id, model_id, work_status, session, user)
     if view == "modelo" and report.by_model is None:
         raise HTTPException(status_code=400, detail="Elige marca y modelo.")
     names = {

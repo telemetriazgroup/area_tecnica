@@ -31,6 +31,11 @@ export function clearSession() {
   localStorage.removeItem(USER_KEY);
 }
 
+export function eventPhotoUrl(id) {
+  const token = getToken() || "";
+  return withBase(`/api/event-photos/${id}?access_token=${encodeURIComponent(token)}`);
+}
+
 export function photoUrl(id) {
   const token = getToken() || "";
   return withBase(`/api/photos/${id}?access_token=${encodeURIComponent(token)}`);

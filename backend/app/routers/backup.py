@@ -11,6 +11,7 @@ from app.models import (
     Assignment,
     Brand,
     Inspection,
+    InspectionEvent,
     InspectionItem,
     Machine,
     ReeferModel,
@@ -108,6 +109,7 @@ def machines(session: Session) -> list[dict]:
             "model": row.model.name if row.model else None,
             "location": row.location,
             "year": row.year,
+            "machine_status": row.machine_status,
             "archived": row.archived,
             "machine_photo": row.machine_photo,
             "serial_photo": row.serial_photo,
@@ -159,8 +161,11 @@ def inspections(session: Session) -> list[dict]:
         .options(
             selectinload(Inspection.machine),
             selectinload(Inspection.technician),
+            selectinload(Inspection.assigned_technician),
             selectinload(Inspection.items).selectinload(InspectionItem.spare_part),
             selectinload(Inspection.items).selectinload(InspectionItem.photos),
+            selectinload(Inspection.events).selectinload(InspectionEvent.photos),
+            selectinload(Inspection.events).selectinload(InspectionEvent.author),
         )
         .order_by(Inspection.id)
     ).all()
@@ -175,9 +180,24 @@ def _inspection(row: Inspection) -> dict:
         "serial": row.machine.serial if row.machine else None,
         "technician_id": row.technician_id,
         "technician": row.technician.name if row.technician else None,
+        "technician_supervisor": row.technician.name if row.technician else None,
+        "assigned_technician_id": row.assigned_technician_id,
+        "assigned_technician": row.assigned_technician.name if row.assigned_technician else None,
         "status": row.status,
+        "work_status": row.work_status,
         "started_at": iso(row.started_at),
         "completed_at": iso(row.completed_at),
+        "events": [
+            {
+                "id": event.id,
+                "status": event.status,
+                "note": event.note,
+                "author": event.author.full_name if event.author else None,
+                "created_at": iso(event.created_at),
+                "photos": [{"id": photo.id, "filename": photo.filename} for photo in event.photos],
+            }
+            for event in row.events
+        ],
         "items": [
             {
                 "id": item.id,

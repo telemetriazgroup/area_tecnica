@@ -86,7 +86,12 @@ export default function Technicians() {
     <Page
       title="Técnicos"
       lede="El nombre es el único dato obligatorio. El acceso al celular se crea aparte, en Usuarios."
-      action={<button type="button" className="btn" onClick={() => { setError(""); setForm({ ...blank }); }}>Nuevo técnico</button>}
+      action={
+        <div className="row-actions">
+          <button type="button" className="btn ghost" onClick={() => download(`/api/technicians/export?include_archived=${includeArchived}&q=${encodeURIComponent(query)}`, "tecnicos.xlsx").catch((err) => setError(err.message))}>Excel</button>
+          <button type="button" className="btn" onClick={() => { setError(""); setForm({ ...blank }); }}>Nuevo técnico</button>
+        </div>
+      }
     >
       <Banner>{error || list.error}</Banner>
       <Banner kind="ok">{message}</Banner>

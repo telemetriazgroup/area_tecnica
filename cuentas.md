@@ -1,0 +1,1 @@
+Usuarios de prueba: admin / admin123, encargado / encargado123, jperez y mlopez / tecnico123. jperez ya tiene la serie RFFU1234567; RFFU7654321 está revisada.

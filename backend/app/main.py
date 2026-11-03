@@ -51,6 +51,64 @@ async def lifespan(_: FastAPI):
         connection.execute(text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS serial_photo VARCHAR(80)"))
         connection.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS manual_file VARCHAR(80)"))
         connection.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS manual_name VARCHAR(200)"))
+        work_status_exists = connection.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'inspections' AND column_name = 'work_status'"
+            )
+        ).first()
+        connection.execute(
+            text(
+                "ALTER TABLE inspections ADD COLUMN IF NOT EXISTS "
+                "assigned_technician_id INTEGER REFERENCES technicians(id)"
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS work_status VARCHAR(20) DEFAULT 'programado'")
+        )
+        if work_status_exists is None:
+            connection.execute(
+                text(
+                    "UPDATE inspections SET work_status = CASE status "
+                    "WHEN 'completada' THEN 'reparado' "
+                    "WHEN 'en_proceso' THEN 'en_proceso' "
+                    "ELSE 'programado' END"
+                )
+            )
+        connection.execute(text("UPDATE inspections SET work_status = 'programado' WHERE work_status IS NULL"))
+        connection.execute(text("ALTER TABLE inspections ALTER COLUMN work_status SET DEFAULT 'programado'"))
+        connection.execute(text("ALTER TABLE inspections ALTER COLUMN work_status SET NOT NULL"))
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_inspections_work_status ON inspections (work_status)")
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_inspections_assigned_technician_id "
+                "ON inspections (assigned_technician_id)"
+            )
+        )
+        machine_status_exists = connection.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'machines' AND column_name = 'machine_status'"
+            )
+        ).first()
+        connection.execute(
+            text("ALTER TABLE machines ADD COLUMN IF NOT EXISTS machine_status VARCHAR(20) DEFAULT 'stock'")
+        )
+        if machine_status_exists is None:
+            connection.execute(
+                text(
+                    "UPDATE machines SET machine_status = 'asignado' "
+                    "WHERE id IN ("
+                    "SELECT machine_id FROM assignments WHERE status IN ('pendiente', 'en_proceso')"
+                    ")"
+                )
+            )
+        connection.execute(text("UPDATE machines SET machine_status = 'stock' WHERE machine_status IS NULL"))
+        connection.execute(text("ALTER TABLE machines ALTER COLUMN machine_status SET DEFAULT 'stock'"))
+        connection.execute(text("ALTER TABLE machines ALTER COLUMN machine_status SET NOT NULL"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_machines_machine_status ON machines (machine_status)"))
         connection.execute(
             text(
                 "UPDATE inspection_items SET condition = CASE condition "

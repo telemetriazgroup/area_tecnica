@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { BASE, api, download } from "../../api";
-import { formatDateTime, formatDuration, formatInputDate, monthStartInput, todayInput, useFetch } from "../../format";
+import { WORK_STATUS_LABEL, formatDateTime, formatDuration, formatInputDate, monthStartInput, todayInput, useFetch } from "../../format";
 import { Banner, Empty, Page, Pill } from "../../ui";
 
 const TABS = [
@@ -48,6 +48,7 @@ export default function Reports() {
   const [to, setTo] = useState(todayInput());
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [workStatus, setWorkStatus] = useState("todos");
   const [daily, setDaily] = useState(null);
   const [needs, setNeeds] = useState(null);
   const [error, setError] = useState("");
@@ -69,6 +70,7 @@ export default function Reports() {
           params.set("brand_id", brandId);
           params.set("model_id", modelId);
         }
+        if (tab === "total" || tab === "general") params.set("work_status", workStatus);
         setNeeds(await api(`/api/reports/needs?${params.toString()}`));
       }
     } catch (err) {
@@ -92,6 +94,7 @@ export default function Reports() {
         params.set("brand_id", brandId);
         params.set("model_id", modelId);
       }
+      if (tab === "total" || tab === "general") params.set("work_status", workStatus);
       const names = { serie: "necesidad-serie", modelo: "necesidad-modelo", total: "conglomerado", general: "reporte-general" };
       await download(`/api/reports/needs/export?${params}`, `${names[tab]}-${from}-al-${to}.${ext}`);
     } catch (err) {
@@ -138,6 +141,14 @@ export default function Reports() {
               {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
             </select>
           </>
+        )}
+        {(tab === "total" || tab === "general") && (
+          <select value={workStatus} onChange={(event) => setWorkStatus(event.target.value)} aria-label="Estado de inspección">
+            <option value="todos">Todos los estados</option>
+            <option value="programado">Programado</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="reparado">Reparado</option>
+          </select>
         )}
         <button className="btn" disabled={busy} type="submit">{busy ? "Generando…" : "Generar"}</button>
       </form>
@@ -186,6 +197,7 @@ export default function Reports() {
               </h2>
               <p>
                 Del {formatInputDate(from)} al {formatInputDate(to)}
+                {(tab === "total" || tab === "general") && needs.work_status ? ` · ${WORK_STATUS_LABEL[needs.work_status] || needs.work_status}` : ""}
                 {tab === "modelo"
                   ? ` · ${needs.by_model?.machines || 0} equipos · ${needs.by_model?.parts.reduce((sum, row) => sum + row.total, 0) || 0} piezas`
                   : tab === "general"
@@ -267,7 +279,7 @@ export default function Reports() {
               ))}
             </section>
           ))}
-          {tab === "general" && needs.models?.length === 0 && <Empty title="Sin equipos" text="No hay inspecciones cerradas en ese rango." />}
+          {tab === "general" && needs.models?.length === 0 && <Empty title="Sin equipos" text="No hay inspecciones en ese rango para el estado elegido." />}
         </article>
       )}
     </Page>

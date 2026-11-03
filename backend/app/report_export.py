@@ -382,6 +382,75 @@ def sum_rows(parts: list[PartSum], conditions: list[ConditionOut]) -> tuple[list
     return headers, rows
 
 
+def build_catalog_xlsx(title: str, subtitle: str, sheet_name: str, headers: list[str], rows: list[list]) -> bytes:
+    book = Workbook()
+    sheet = book.active
+    sheet.title = sheet_name[:31]
+    stamp_logo(sheet, title, subtitle)
+    write_table(sheet, 5, headers, rows)
+    return workbook_bytes(book)
+
+
+def build_inspections_xlsx(rows: list[dict], events: list[dict]) -> bytes:
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Inspecciones"
+    stamp_logo(sheet, "Inspecciones", "Estado de inspección, técnico supervisor y técnico asignado")
+    headers = [
+        "Serie",
+        "Marca",
+        "Modelo",
+        "Ubicación",
+        "Técnico supervisor",
+        "Técnico",
+        "Estado de inspección",
+        "Repuestos",
+        "Lista de repuestos",
+        "Asignada",
+        "Inicio",
+        "Cierre de lista",
+        "Tiempo",
+    ]
+    table = [
+        [
+            row["serial"],
+            row["brand"],
+            row["model"],
+            row["location"] or "",
+            row["supervisor"],
+            row["technician"] or "",
+            row["work_status"],
+            row["items_count"],
+            row["list_status"],
+            format_when(row["assigned_at"]),
+            format_when(row["started_at"]),
+            format_when(row["completed_at"]),
+            format_duration(row["assigned_at"], row["completed_at"]),
+        ]
+        for row in rows
+    ]
+    write_table(sheet, 5, headers, table)
+    trace = book.create_sheet("Trazabilidad")
+    stamp_logo(trace, "Trazabilidad", "Seguimientos e incidencias de cada inspección")
+    write_table(
+        trace,
+        5,
+        ["Serie", "Fecha", "Estado de inspección", "Seguimiento", "Autor", "Fotos"],
+        [
+            [
+                event["serial"],
+                format_when(event["created_at"]),
+                event["status"],
+                event["note"] or "",
+                event["author"] or "",
+                event["photos"],
+            ]
+            for event in events
+        ],
+    )
+    return workbook_bytes(book)
+
+
 def build_daily_xlsx(report: DailyReport) -> bytes:
     book = Workbook()
     sheet = book.active
@@ -444,6 +513,16 @@ def unit_rows(units: list, labels: dict[str, str]) -> list[list]:
     return rows
 
 
+def work_status_note(report: NeedsReport) -> str:
+    label = {
+        "todos": "Todos los estados",
+        "programado": "Programado",
+        "en_proceso": "En proceso",
+        "reparado": "Reparado",
+    }.get(report.work_status, "")
+    return f"  ·  {label}" if label else ""
+
+
 def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
     book = Workbook()
     sheet = book.active
@@ -464,7 +543,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
             stamp_logo(
                 current,
                 f"{block.brand} {block.model}",
-                f"{span}  ·  {block.machines} máquinas  ·  {pieces} piezas",
+                f"{span}{work_status_note(report)}  ·  {block.machines} máquinas  ·  {pieces} piezas",
             )
             write_table(current, 5, detail_headers, unit_rows(block.units, labels))
         return workbook_bytes(book)
@@ -487,7 +566,7 @@ def build_needs_xlsx(report: NeedsReport, view: str) -> bytes:
         stamp_logo(
             sheet,
             "Conglomerado de repuestos",
-            f"Del {format_day(report.date_from)} al {format_day(report.date_to)}  ·  {report.summary.inspections} inspecciones  ·  {report.summary.parts_total} piezas",
+            f"Del {format_day(report.date_from)} al {format_day(report.date_to)}{work_status_note(report)}  ·  {report.summary.inspections} inspecciones  ·  {report.summary.parts_total} piezas",
         )
         headers, rows = sum_rows(report.conglomerate, report.conditions)
         write_table(sheet, 5, headers, rows)

@@ -1,17 +1,19 @@
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.constants import MAX_PHOTOS, OPEN_ASSIGNMENT, STAFF
-from app.deps import get_current_user, get_db, require_staff, require_tecnico
+from app.constants import MAX_PHOTOS, OPEN_ASSIGNMENT, STAFF, WORK_STATUS_LABEL, WORK_STATUSES
+from app.deps import get_current_user, get_db, require_staff, require_superadmin, require_tecnico
 from app.models import (
     Assignment,
     ConditionOption,
     Inspection,
+    InspectionEvent,
+    InspectionEventPhoto,
     InspectionItem,
     InspectionPhoto,
     Machine,
@@ -20,12 +22,16 @@ from app.models import (
     User,
 )
 from app.photos import photo_path, remove_file, save_image
-from app.routers.catalog import to_part
+from app.report_export import XLSX_MEDIA, build_inspections_xlsx
+from app.routers.catalog import release_machine, set_machine_status, to_part
 from app.schemas import (
     AssignmentIn,
     AssignmentOut,
+    EventPhotoOut,
+    InspectionEventOut,
     InspectionOut,
     InspectionSummary,
+    InspectionTechnicianUpdate,
     ItemOut,
     ItemUpdate,
     MachineBrief,
@@ -52,7 +58,10 @@ def load_inspection(session: Session, inspection_id: int) -> Inspection:
             selectinload(Inspection.machine).selectinload(Machine.brand),
             selectinload(Inspection.machine).selectinload(Machine.model),
             selectinload(Inspection.technician),
+            selectinload(Inspection.assigned_technician),
             selectinload(Inspection.assignment),
+            selectinload(Inspection.events).selectinload(InspectionEvent.photos),
+            selectinload(Inspection.events).selectinload(InspectionEvent.author),
         )
     )
     if inspection is None:
@@ -63,7 +72,8 @@ def load_inspection(session: Session, inspection_id: int) -> Inspection:
 def ensure_view(user: User, inspection: Inspection) -> None:
     if user.role in STAFF:
         return
-    if user.technician and inspection.technician_id == user.technician.id:
+    technician_id = user.technician.id if user.technician else None
+    if technician_id in {inspection.technician_id, inspection.assigned_technician_id}:
         return
     raise HTTPException(status_code=403, detail="No tienes permiso para ver esta inspección.")
 
@@ -105,14 +115,29 @@ def inspection_out(inspection: Inspection) -> InspectionOut:
                 photos=[PhotoOut(id=photo.id) for photo in item.photos],
             )
         )
+    events = [
+        InspectionEventOut(
+            id=event.id,
+            status=event.status,
+            note=event.note,
+            author_name=event.author.full_name if event.author else None,
+            created_at=event.created_at,
+            photos=[EventPhotoOut(id=photo.id) for photo in event.photos],
+        )
+        for event in inspection.events
+    ]
+    assigned = inspection.assigned_technician
     return InspectionOut(
         id=inspection.id,
         assignment_id=inspection.assignment_id,
         status=inspection.status,
+        work_status=inspection.work_status,
         assigned_at=inspection.assignment.created_at,
         started_at=inspection.started_at,
         completed_at=inspection.completed_at,
         technician_name=inspection.technician.name,
+        assigned_technician_id=assigned.id if assigned else None,
+        assigned_technician_name=assigned.name if assigned else None,
         machine=MachineBrief(
             id=machine.id,
             serial=machine.serial,
@@ -127,6 +152,7 @@ def inspection_out(inspection: Inspection) -> InspectionOut:
             has_manual=bool(machine.model.manual_file),
         ),
         items=items,
+        events=events,
     )
 
 
@@ -180,7 +206,11 @@ def my_jobs(session: Session = Depends(get_db), user: User = Depends(require_tec
     ).all()
     done_rows = session.scalars(
         select(Assignment)
-        .where(Assignment.technician_id == technician_id, Assignment.status == "completada")
+        .where(
+            Assignment.technician_id == technician_id,
+            Assignment.status == "completada",
+            Assignment.inspection.has(),
+        )
         .options(*options)
         .order_by(Assignment.id.desc())
         .limit(15)
@@ -266,6 +296,7 @@ def create_assignment(
         status="pendiente",
     )
     session.add(assignment)
+    set_machine_status(session, machine.id, "asignado")
     session.commit()
     return assignment_out(load_assignment(session, assignment.id))
 
@@ -282,6 +313,7 @@ def cancel_assignment(
     if assignment.status != "pendiente":
         raise HTTPException(status_code=400, detail="Solo puedes cancelar una asignación que aún no empieza.")
     assignment.status = "cancelada"
+    release_machine(session, assignment.machine_id)
     session.commit()
 
 
@@ -335,20 +367,28 @@ def list_inspections(
             selectinload(Inspection.machine).selectinload(Machine.brand),
             selectinload(Inspection.machine).selectinload(Machine.model),
             selectinload(Inspection.technician),
+            selectinload(Inspection.assigned_technician),
             selectinload(Inspection.assignment),
             selectinload(Inspection.items),
         )
         .order_by(Inspection.id.desc())
-        .limit(200)
+        .limit(5000)
     )
     if user.role == "tecnico":
         if user.technician is None:
             return []
-        stmt = stmt.where(Inspection.technician_id == user.technician.id)
+        stmt = stmt.where(
+            or_(
+                Inspection.technician_id == user.technician.id,
+                Inspection.assigned_technician_id == user.technician.id,
+            )
+        )
     elif user.role not in STAFF:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
     if status:
-        stmt = stmt.where(Inspection.status == status)
+        if status not in WORK_STATUSES:
+            raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+        stmt = stmt.where(Inspection.work_status == status)
     query = q.strip()
     if query:
         stmt = stmt.where(or_(ilike(Machine.serial, query), ilike(Machine.location, query)))
@@ -362,14 +402,18 @@ def list_inspections(
     rows = []
     for inspection in session.scalars(stmt).all():
         machine = inspection.machine
+        assigned = inspection.assigned_technician
         rows.append(
             InspectionSummary(
                 id=inspection.id,
                 status=inspection.status,
+                work_status=inspection.work_status,
                 assigned_at=inspection.assignment.created_at,
                 started_at=inspection.started_at,
                 completed_at=inspection.completed_at,
                 technician_name=inspection.technician.name,
+                assigned_technician_id=assigned.id if assigned else None,
+                assigned_technician_name=assigned.name if assigned else None,
                 serial=machine.serial,
                 brand=machine.brand.name,
                 model=machine.model.name,
@@ -378,6 +422,164 @@ def list_inspections(
             )
         )
     return rows
+
+
+LIST_STATUS = {"en_proceso": "En revisión", "completada": "Revisada"}
+
+
+def check_work_status(status: str) -> str:
+    if status not in WORK_STATUSES:
+        raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+    return status
+
+
+def upload_list(photos: list[UploadFile] | UploadFile | None) -> list[UploadFile]:
+    if photos is None:
+        return []
+    if isinstance(photos, UploadFile):
+        return [photos]
+    return [photo for photo in photos if uploaded(photo)]
+
+
+def active_technician(session: Session, technician_id: int) -> Technician:
+    technician = session.get(Technician, technician_id)
+    if technician is None or technician.archived:
+        raise HTTPException(status_code=400, detail="El técnico no está disponible.")
+    return technician
+
+
+@router.get("/inspections/export")
+def export_inspections(
+    q: str = "",
+    status: str = "",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    rows = list_inspections(q, status, date_from, date_to, session, user)
+    ids = [row.id for row in rows]
+    events_by_inspection: dict[int, list[InspectionEvent]] = {row.id: [] for row in rows}
+    if ids:
+        events = session.scalars(
+            select(InspectionEvent)
+            .where(InspectionEvent.inspection_id.in_(ids))
+            .options(selectinload(InspectionEvent.author), selectinload(InspectionEvent.photos))
+            .order_by(InspectionEvent.id)
+        ).all()
+        for event in events:
+            events_by_inspection.setdefault(event.inspection_id, []).append(event)
+    serial_of = {row.id: row.serial for row in rows}
+    payload = [
+        {
+            "serial": row.serial,
+            "brand": row.brand,
+            "model": row.model,
+            "location": row.location,
+            "supervisor": row.technician_name,
+            "technician": row.assigned_technician_name,
+            "work_status": WORK_STATUS_LABEL.get(row.work_status, row.work_status),
+            "items_count": row.items_count,
+            "list_status": LIST_STATUS.get(row.status, row.status),
+            "assigned_at": row.assigned_at,
+            "started_at": row.started_at,
+            "completed_at": row.completed_at,
+        }
+        for row in rows
+    ]
+    trace = [
+        {
+            "serial": serial_of.get(event.inspection_id, ""),
+            "created_at": event.created_at,
+            "status": WORK_STATUS_LABEL.get(event.status, event.status),
+            "note": event.note,
+            "author": event.author.full_name if event.author else None,
+            "photos": len(event.photos),
+        }
+        for row in rows
+        for event in events_by_inspection.get(row.id, [])
+    ]
+    filename = "inspecciones.xlsx"
+    return Response(
+        content=build_inspections_xlsx(payload, trace),
+        media_type=XLSX_MEDIA,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.patch("/inspections/{inspection_id}/technician", response_model=InspectionOut)
+def assign_inspection_technician(
+    inspection_id: int,
+    payload: InspectionTechnicianUpdate,
+    session: Session = Depends(get_db),
+    _: User = Depends(require_staff),
+):
+    inspection = load_inspection(session, inspection_id)
+    if payload.technician_id is None:
+        inspection.assigned_technician_id = None
+    else:
+        technician = active_technician(session, payload.technician_id)
+        inspection.assigned_technician_id = technician.id
+    session.commit()
+    return inspection_out(load_inspection(session, inspection.id))
+
+
+@router.post("/inspections/{inspection_id}/events", response_model=InspectionOut, status_code=201)
+def add_inspection_event(
+    inspection_id: int,
+    status: str = Form(),
+    note: str = Form(""),
+    photos: list[UploadFile] | None = File(None),
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    inspection = load_inspection(session, inspection_id)
+    work_status = check_work_status(status)
+    clean_note = clean(note)
+    if clean_note and len(clean_note) > 800:
+        raise HTTPException(status_code=400, detail="El seguimiento es demasiado largo.")
+    uploads = upload_list(photos)
+    if len(uploads) > MAX_PHOTOS:
+        raise HTTPException(status_code=400, detail="Solo puedes adjuntar 4 fotos por seguimiento.")
+    saved: list[str] = []
+    try:
+        for photo in uploads:
+            saved.append(save_image(photo))
+    except HTTPException:
+        for filename in saved:
+            remove_file(filename)
+        raise
+    event = InspectionEvent(
+        inspection_id=inspection.id,
+        status=work_status,
+        note=clean_note,
+        created_by_id=user.id,
+    )
+    session.add(event)
+    session.flush()
+    for filename in saved:
+        session.add(InspectionEventPhoto(event_id=event.id, filename=filename))
+    inspection.work_status = work_status
+    session.commit()
+    return inspection_out(load_inspection(session, inspection.id))
+
+
+@router.delete("/inspections/{inspection_id}", status_code=204)
+def delete_inspection(
+    inspection_id: int,
+    session: Session = Depends(get_db),
+    _: User = Depends(require_superadmin),
+):
+    inspection = load_inspection(session, inspection_id)
+    filenames = [photo.filename for item in inspection.items for photo in item.photos]
+    filenames.extend(photo.filename for event in inspection.events for photo in event.photos)
+    assignment = inspection.assignment
+    if assignment is not None and assignment.status == "en_proceso":
+        assignment.status = "pendiente"
+    session.delete(inspection)
+    session.commit()
+    for filename in filenames:
+        remove_file(filename)
 
 
 @router.get("/inspections/{inspection_id}", response_model=InspectionOut)
@@ -467,6 +669,7 @@ def complete_inspection(
     inspection.status = "completada"
     inspection.completed_at = datetime.now(timezone.utc)
     inspection.assignment.status = "completada"
+    release_machine(session, inspection.machine_id)
     session.commit()
     return inspection_out(load_inspection(session, inspection.id))
 
@@ -553,6 +756,19 @@ def delete_photo(
     session.commit()
     remove_file(filename)
     return inspection_out(load_inspection(session, inspection.id))
+
+
+@router.get("/event-photos/{photo_id}")
+def get_event_photo(photo_id: int, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    photo = session.scalar(
+        select(InspectionEventPhoto)
+        .where(InspectionEventPhoto.id == photo_id)
+        .options(selectinload(InspectionEventPhoto.event).selectinload(InspectionEvent.inspection))
+    )
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No se encontró la foto.")
+    ensure_view(user, photo.event.inspection)
+    return FileResponse(photo_path(photo.filename), media_type="image/jpeg")
 
 
 @router.get("/photos/{photo_id}")
