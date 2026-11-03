@@ -8,15 +8,19 @@ DEFAULT_CONDITIONS = (
 )
 OPEN_ASSIGNMENT = {"pendiente", "en_proceso"}
 MAX_PHOTOS = 4
-WORK_STATUSES = ("programado", "en_proceso", "reparado")
+WORK_STATUSES = ("programado", "en_proceso", "reparado", "sin_accion")
 WORK_STATUS_LABEL = {
+    "": "—",
     "programado": "Programado",
     "en_proceso": "En proceso",
     "reparado": "Reparado",
+    "sin_accion": "Sin acción",
+    "seguimiento": "Seguimiento",
     "todos": "Todos",
 }
-MACHINE_STATUSES = ("stock", "asignado")
+MACHINE_STATUSES = ("", "stock", "asignado")
 MACHINE_STATUS_LABEL = {
+    "": "—",
     "stock": "Stock",
     "asignado": "Asignado",
 }

@@ -395,7 +395,7 @@ def build_inspections_xlsx(rows: list[dict], events: list[dict]) -> bytes:
     book = Workbook()
     sheet = book.active
     sheet.title = "Inspecciones"
-    stamp_logo(sheet, "Inspecciones", "Estado de inspección, técnico supervisor y técnico asignado")
+    stamp_logo(sheet, "Inspecciones", "Estado de la inspección y status posterior")
     headers = [
         "Serie",
         "Marca",
@@ -404,11 +404,11 @@ def build_inspections_xlsx(rows: list[dict], events: list[dict]) -> bytes:
         "Técnico supervisor",
         "Técnico",
         "Estado de inspección",
+        "Status",
         "Repuestos",
-        "Lista de repuestos",
         "Asignada",
         "Inicio",
-        "Cierre de lista",
+        "Cierre",
         "Tiempo",
     ]
     table = [
@@ -419,9 +419,9 @@ def build_inspections_xlsx(rows: list[dict], events: list[dict]) -> bytes:
             row["location"] or "",
             row["supervisor"],
             row["technician"] or "",
+            row["list_status"],
             row["work_status"],
             row["items_count"],
-            row["list_status"],
             format_when(row["assigned_at"]),
             format_when(row["started_at"]),
             format_when(row["completed_at"]),
@@ -435,7 +435,7 @@ def build_inspections_xlsx(rows: list[dict], events: list[dict]) -> bytes:
     write_table(
         trace,
         5,
-        ["Serie", "Fecha", "Estado de inspección", "Seguimiento", "Autor", "Fotos"],
+        ["Serie", "Fecha", "Registro", "Nota", "Autor", "Fotos"],
         [
             [
                 event["serial"],
@@ -515,10 +515,11 @@ def unit_rows(units: list, labels: dict[str, str]) -> list[list]:
 
 def work_status_note(report: NeedsReport) -> str:
     label = {
-        "todos": "Todos los estados",
+        "todos": "Todos",
         "programado": "Programado",
         "en_proceso": "En proceso",
         "reparado": "Reparado",
+        "sin_accion": "Sin acción",
     }.get(report.work_status, "")
     return f"  ·  {label}" if label else ""
 

@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, download } from "../../api";
-import { WORK_STATUS_LABEL, formatDuration, todayInput, useFetch } from "../../format";
+import { WORK_STATUS_LABEL, formatDuration, inspectionStateLabel, todayInput, useFetch } from "../../format";
 import { Banner, Empty, Page, Pill } from "../../ui";
 
 const STATUSES = [
   ["programado", "Programado"],
   ["en_proceso", "En proceso"],
   ["reparado", "Reparado"],
+  ["sin_accion", "Sin acción"],
+  ["sin_definir", "Sin definir"],
 ];
 
 export default function Inspections() {
@@ -55,14 +57,14 @@ export default function Inspections() {
   return (
     <Page
       title="Inspecciones"
-      lede="Asigna al técnico, sigue el estado de la inspección y exporta el listado."
+      lede="El técnico cierra la inspección. El status —programado, en proceso, reparado o sin acción— se decide después."
       action={<button type="button" className="btn ghost" disabled={exporting} onClick={exportExcel}>{exporting ? "Exportando…" : "Excel"}</button>}
     >
       <Banner>{list.error || exportError}</Banner>
       <form className="filters" onSubmit={(event) => { event.preventDefault(); setQuery(q.trim()); }}>
         <input value={q} placeholder="Serie o ubicación" onChange={(event) => setQ(event.target.value)} />
-        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Estado de inspección">
-          <option value="">Todos los estados</option>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status">
+          <option value="">Todos</option>
           {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <input type="date" value={from} max={todayInput()} onChange={(event) => setFrom(event.target.value)} />
@@ -80,6 +82,7 @@ export default function Inspections() {
               <th>Técnico supervisor</th>
               <th>Técnico</th>
               <th>Estado de inspección</th>
+              <th>Status</th>
               <th>Repuestos</th>
               <th>Tiempo</th>
             </tr>
@@ -92,7 +95,10 @@ export default function Inspections() {
                 <td data-label="Técnico supervisor">{row.technician_name}</td>
                 <td data-label="Técnico">{row.assigned_technician_name || "Sin asignar"}</td>
                 <td data-label="Estado de inspección">
-                  <Pill value={row.work_status} label={WORK_STATUS_LABEL[row.work_status]} />
+                  <Pill value={row.status} label={inspectionStateLabel(row.status)} />
+                </td>
+                <td data-label="Status">
+                  <Pill value={row.work_status || "sin_definir"} label={WORK_STATUS_LABEL[row.work_status] || "—"} />
                 </td>
                 <td data-label="Repuestos">{row.items_count}</td>
                 <td data-label="Tiempo">{formatDuration(row.assigned_at, row.completed_at)}{row.completed_at ? "" : " · en curso"}</td>

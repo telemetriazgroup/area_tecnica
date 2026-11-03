@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, eventPhotoUrl, photoUrl } from "../../api";
 import { useAuth } from "../../auth";
-import { STATUS_LABEL, WORK_STATUS_LABEL, formatDateTime, formatDuration, useFetch } from "../../format";
+import { WORK_STATUS_LABEL, formatDateTime, formatDuration, inspectionStateLabel, useFetch } from "../../format";
 import { Banner, Field, MachinePhotos, ManualView, Page, Pill } from "../../ui";
 
 const STATUSES = [
   ["programado", "Programado"],
   ["en_proceso", "En proceso"],
   ["reparado", "Reparado"],
+  ["sin_accion", "Sin acción"],
 ];
 
 export default function InspectionDetail() {
@@ -21,7 +22,8 @@ export default function InspectionDetail() {
   const [photosOpen, setPhotosOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [technicianId, setTechnicianId] = useState("");
-  const [follow, setFollow] = useState({ status: "programado", note: "", photos: [] });
+  const [follow, setFollow] = useState({ note: "", photos: [] });
+  const [decision, setDecision] = useState({ status: "programado", note: "", photos: [] });
   const [fileKey, setFileKey] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -31,7 +33,7 @@ export default function InspectionDetail() {
   useEffect(() => {
     if (!data) return;
     setTechnicianId(data.assigned_technician_id ? String(data.assigned_technician_id) : "");
-    setFollow((current) => ({ ...current, status: data.work_status || "programado" }));
+    if (data.work_status) setDecision((current) => ({ ...current, status: data.work_status }));
   }, [data?.id, data?.assigned_technician_id, data?.work_status]);
 
   const techOptions = (technicians.data || []).filter((tech) => !tech.archived);
@@ -65,12 +67,35 @@ export default function InspectionDetail() {
     setBusy("follow");
     setError("");
     const form = new FormData();
-    form.set("status", follow.status);
     form.set("note", follow.note);
     follow.photos.forEach((file) => form.append("photos", file));
     try {
       await api(`/api/inspections/${id}/events`, { method: "POST", form });
-      setFollow({ status: follow.status, note: "", photos: [] });
+      setFollow({ note: "", photos: [] });
+      setFileKey((value) => value + 1);
+      detail.reload();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveStatus(event) {
+    event.preventDefault();
+    if (decision.photos.length > 4) {
+      setError("Solo puedes adjuntar 4 fotos por status.");
+      return;
+    }
+    setBusy("status");
+    setError("");
+    const form = new FormData();
+    form.set("status", decision.status);
+    form.set("note", decision.note);
+    decision.photos.forEach((file) => form.append("photos", file));
+    try {
+      await api(`/api/inspections/${id}/status`, { method: "POST", form });
+      setDecision((current) => ({ ...current, note: "", photos: [] }));
       setFileKey((value) => value + 1);
       detail.reload();
     } catch (err) {
@@ -123,13 +148,13 @@ export default function InspectionDetail() {
           <p className="muted">
             Asignada {formatDateTime(data.assigned_at)}
             {" · "}Entró {formatDateTime(data.started_at)}
-            {" · "}{data.completed_at ? `Cerró la lista ${formatDateTime(data.completed_at)}` : "La lista sigue abierta"}
+            {" · "}{data.completed_at ? `Cerró la inspección ${formatDateTime(data.completed_at)}` : "La inspección sigue abierta"}
           </p>
           <div className="actions">
             <span className="muted">Estado de inspección</span>
-            <Pill value={data.work_status} label={WORK_STATUS_LABEL[data.work_status]} />
-            <span className="muted">Lista de repuestos</span>
-            <Pill value={data.status} label={STATUS_LABEL[data.status]} />
+            <Pill value={data.status} label={inspectionStateLabel(data.status)} />
+            <span className="muted">Status</span>
+            <Pill value={data.work_status || "sin_definir"} label={WORK_STATUS_LABEL[data.work_status] || "—"} />
           </div>
           <div className="actions">
             <button type="button" className="btn ghost photos-btn" onClick={() => setPhotosOpen(true)}>Ver fotos</button>
@@ -170,35 +195,64 @@ export default function InspectionDetail() {
 
           <form className="card" onSubmit={addFollow}>
             <h2>Seguimiento o incidencia</h2>
-            <p className="muted">Cada registro actualiza el estado de inspección y queda en la línea de trazabilidad.</p>
-            <div className="split">
-              <Field label="Estado de inspección">
-                <select value={follow.status} onChange={(event) => setFollow({ ...follow, status: event.target.value })}>
-                  {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </Field>
-              <Field label="Fotos" hint="Hasta 4, JPG o PNG.">
-                <input
-                  key={fileKey}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => setFollow({ ...follow, photos: Array.from(event.target.files || []).slice(0, 4) })}
-                />
-              </Field>
-            </div>
+            <p className="muted">Nota y fotos de la inspección. No cambia el status.</p>
+            <Field label="Fotos" hint="Hasta 4, JPG o PNG.">
+              <input
+                key={`follow-${fileKey}`}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(event) => setFollow({ ...follow, photos: Array.from(event.target.files || []).slice(0, 4) })}
+              />
+            </Field>
             <Field label="Nota">
               <textarea
                 rows={3}
                 maxLength={800}
                 value={follow.note}
-                placeholder="Qué se hizo, qué falta o qué incidencia apareció"
+                placeholder="Qué se vio en la inspección o qué incidencia apareció"
                 onChange={(event) => setFollow({ ...follow, note: event.target.value })}
               />
             </Field>
             {follow.photos.length > 0 && <p className="muted">{follow.photos.map((file) => file.name).join(", ")}</p>}
             <button className="btn" type="submit" disabled={busy === "follow"}>{busy === "follow" ? "Registrando…" : "Registrar seguimiento"}</button>
           </form>
+
+          {data.status === "completada" ? (
+            <form className="card" onSubmit={saveStatus}>
+              <h2>Status</h2>
+              <p className="muted">Se define después de cerrar la inspección: programar la reparación, seguirla, marcarla reparada o no hacer ninguna acción.</p>
+              <div className="split">
+                <Field label="Status">
+                  <select value={decision.status} onChange={(event) => setDecision({ ...decision, status: event.target.value })}>
+                    {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Fotos" hint="Hasta 4, JPG o PNG.">
+                  <input
+                    key={`status-${fileKey}`}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(event) => setDecision({ ...decision, photos: Array.from(event.target.files || []).slice(0, 4) })}
+                  />
+                </Field>
+              </div>
+              <Field label="Nota">
+                <textarea
+                  rows={3}
+                  maxLength={800}
+                  value={decision.note}
+                  placeholder="Por qué se programa, se sigue, se da por reparada o no se actúa"
+                  onChange={(event) => setDecision({ ...decision, note: event.target.value })}
+                />
+              </Field>
+              {decision.photos.length > 0 && <p className="muted">{decision.photos.map((file) => file.name).join(", ")}</p>}
+              <button className="btn" type="submit" disabled={busy === "status"}>{busy === "status" ? "Guardando…" : "Registrar status"}</button>
+            </form>
+          ) : (
+            <p className="muted">El status se define cuando el técnico cierra la inspección.</p>
+          )}
 
           <h2>Trazabilidad</h2>
           {data.events.length === 0 && <p className="muted">Todavía no hay seguimientos.</p>}
@@ -207,7 +261,7 @@ export default function InspectionDetail() {
               <article key={event.id}>
                 <span className="dot" aria-hidden="true" />
                 <header className="actions">
-                  <Pill value={event.status} label={WORK_STATUS_LABEL[event.status]} />
+                  <Pill value={event.status || "seguimiento"} label={WORK_STATUS_LABEL[event.status] || event.status} />
                   <span className="muted">{formatDateTime(event.created_at)}{event.author_name ? ` · ${event.author_name}` : ""}</span>
                 </header>
                 {event.note && <p>{event.note}</p>}

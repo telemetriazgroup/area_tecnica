@@ -23,7 +23,7 @@ from app.models import (
 )
 from app.photos import photo_path, remove_file, save_image
 from app.report_export import XLSX_MEDIA, build_inspections_xlsx
-from app.routers.catalog import release_machine, set_machine_status, to_part
+from app.routers.catalog import to_part
 from app.schemas import (
     AssignmentIn,
     AssignmentOut,
@@ -296,7 +296,6 @@ def create_assignment(
         status="pendiente",
     )
     session.add(assignment)
-    set_machine_status(session, machine.id, "asignado")
     session.commit()
     return assignment_out(load_assignment(session, assignment.id))
 
@@ -313,7 +312,6 @@ def cancel_assignment(
     if assignment.status != "pendiente":
         raise HTTPException(status_code=400, detail="Solo puedes cancelar una asignación que aún no empieza.")
     assignment.status = "cancelada"
-    release_machine(session, assignment.machine_id)
     session.commit()
 
 
@@ -385,9 +383,11 @@ def list_inspections(
         )
     elif user.role not in STAFF:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
-    if status:
+    if status == "sin_definir":
+        stmt = stmt.where(Inspection.work_status == "")
+    elif status:
         if status not in WORK_STATUSES:
-            raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+            raise HTTPException(status_code=400, detail="El status no es válido.")
         stmt = stmt.where(Inspection.work_status == status)
     query = q.strip()
     if query:
@@ -424,12 +424,12 @@ def list_inspections(
     return rows
 
 
-LIST_STATUS = {"en_proceso": "En revisión", "completada": "Revisada"}
+LIST_STATUS = {"en_proceso": "En revisión", "completada": "Cerrada"}
 
 
 def check_work_status(status: str) -> str:
     if status not in WORK_STATUSES:
-        raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+        raise HTTPException(status_code=400, detail="El status no es válido.")
     return status
 
 
@@ -478,7 +478,7 @@ def export_inspections(
             "location": row.location,
             "supervisor": row.technician_name,
             "technician": row.assigned_technician_name,
-            "work_status": WORK_STATUS_LABEL.get(row.work_status, row.work_status),
+            "work_status": WORK_STATUS_LABEL.get(row.work_status, row.work_status) or "—",
             "items_count": row.items_count,
             "list_status": LIST_STATUS.get(row.status, row.status),
             "assigned_at": row.assigned_at,
@@ -524,23 +524,13 @@ def assign_inspection_technician(
     return inspection_out(load_inspection(session, inspection.id))
 
 
-@router.post("/inspections/{inspection_id}/events", response_model=InspectionOut, status_code=201)
-def add_inspection_event(
-    inspection_id: int,
-    status: str = Form(),
-    note: str = Form(""),
-    photos: list[UploadFile] | None = File(None),
-    session: Session = Depends(get_db),
-    user: User = Depends(require_staff),
-):
-    inspection = load_inspection(session, inspection_id)
-    work_status = check_work_status(status)
+def store_event(session: Session, inspection: Inspection, user: User, status: str, note: str, photos) -> None:
     clean_note = clean(note)
     if clean_note and len(clean_note) > 800:
-        raise HTTPException(status_code=400, detail="El seguimiento es demasiado largo.")
+        raise HTTPException(status_code=400, detail="La nota es demasiado larga.")
     uploads = upload_list(photos)
     if len(uploads) > MAX_PHOTOS:
-        raise HTTPException(status_code=400, detail="Solo puedes adjuntar 4 fotos por seguimiento.")
+        raise HTTPException(status_code=400, detail="Solo puedes adjuntar 4 fotos.")
     saved: list[str] = []
     try:
         for photo in uploads:
@@ -551,7 +541,7 @@ def add_inspection_event(
         raise
     event = InspectionEvent(
         inspection_id=inspection.id,
-        status=work_status,
+        status=status,
         note=clean_note,
         created_by_id=user.id,
     )
@@ -559,7 +549,38 @@ def add_inspection_event(
     session.flush()
     for filename in saved:
         session.add(InspectionEventPhoto(event_id=event.id, filename=filename))
+
+
+@router.post("/inspections/{inspection_id}/events", response_model=InspectionOut, status_code=201)
+def add_inspection_event(
+    inspection_id: int,
+    note: str = Form(""),
+    photos: list[UploadFile] | None = File(None),
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    inspection = load_inspection(session, inspection_id)
+    store_event(session, inspection, user, "seguimiento", note, photos)
+    session.commit()
+    return inspection_out(load_inspection(session, inspection.id))
+
+
+@router.post("/inspections/{inspection_id}/status", response_model=InspectionOut, status_code=201)
+def set_inspection_status(
+    inspection_id: int,
+    status: str = Form(),
+    note: str = Form(""),
+    photos: list[UploadFile] | None = File(None),
+    session: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    inspection = load_inspection(session, inspection_id)
+    if inspection.status != "completada":
+        raise HTTPException(status_code=400, detail="El status se define cuando el técnico ya cerró la inspección.")
+    work_status = check_work_status(status)
+    store_event(session, inspection, user, work_status, note, photos)
     inspection.work_status = work_status
+    inspection.status_at = datetime.now(timezone.utc)
     session.commit()
     return inspection_out(load_inspection(session, inspection.id))
 
@@ -669,7 +690,6 @@ def complete_inspection(
     inspection.status = "completada"
     inspection.completed_at = datetime.now(timezone.utc)
     inspection.assignment.status = "completada"
-    release_machine(session, inspection.machine_id)
     session.commit()
     return inspection_out(load_inspection(session, inspection.id))
 

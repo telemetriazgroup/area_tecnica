@@ -384,25 +384,8 @@ def restore_model(model_id: int, session: Session = Depends(get_db), _: User = D
 
 def check_machine_status(status: str) -> str:
     if status not in MACHINE_STATUSES:
-        raise HTTPException(status_code=400, detail="El estatus de la máquina debe ser stock o asignado.")
+        raise HTTPException(status_code=400, detail="El estatus de la máquina es stock, asignado, o queda sin definir.")
     return status
-
-
-def set_machine_status(session: Session, machine_id: int, status: str) -> None:
-    machine = session.get(Machine, machine_id)
-    if machine is not None:
-        machine.machine_status = status
-
-
-def release_machine(session: Session, machine_id: int) -> None:
-    open_job = session.scalar(
-        select(Assignment.id).where(
-            Assignment.machine_id == machine_id,
-            Assignment.status.in_(OPEN_ASSIGNMENT),
-        )
-    )
-    if open_job is None:
-        set_machine_status(session, machine_id, "stock")
 
 
 @router.get("/machines", response_model=list[MachineOut])
@@ -420,7 +403,9 @@ def list_machines(
     )
     if not archived_requested(user, include_archived):
         stmt = stmt.where(Machine.archived.is_(False))
-    if status:
+    if status == "sin_estatus":
+        stmt = stmt.where(Machine.machine_status == "")
+    elif status:
         stmt = stmt.where(Machine.machine_status == check_machine_status(status))
     query = q.strip()
     if query:
@@ -484,13 +469,7 @@ def update_machine(
     machine.model_id = model.id
     machine.location = clean(payload.location)
     machine.year = payload.year
-    next_status = check_machine_status(payload.machine_status)
-    open_job = session.scalar(
-        select(Assignment.id).where(Assignment.machine_id == machine.id, Assignment.status.in_(OPEN_ASSIGNMENT))
-    )
-    if open_job and next_status == "stock":
-        raise HTTPException(status_code=400, detail="Esta máquina tiene una revisión abierta. No puede volver a stock.")
-    machine.machine_status = next_status
+    machine.machine_status = check_machine_status(payload.machine_status)
     commit_or_conflict(session, "Esa serie ya está registrada.")
     machine = session.scalar(
         select(Machine)

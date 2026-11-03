@@ -74,7 +74,7 @@ class MachineIn(BaseModel):
     model_id: int
     location: str | None = Field(default=None, max_length=160)
     year: int | None = Field(default=None, ge=1980, le=2100)
-    machine_status: str = "stock"
+    machine_status: str = ""
 
 
 class AssignmentBrief(BaseModel):
@@ -93,7 +93,7 @@ class MachineOut(BaseModel):
     model_name: str
     location: str | None
     year: int | None
-    machine_status: str = "stock"
+    machine_status: str = ""
     archived: bool
     has_machine_photo: bool = False
     has_serial_photo: bool = False
@@ -264,7 +264,7 @@ class RecentInspection(BaseModel):
     technician_name: str
     assigned_technician_name: str | None = None
     status: str
-    work_status: str = "programado"
+    work_status: str = ""
     assigned_at: datetime
     started_at: datetime
     completed_at: datetime | None
@@ -275,12 +275,21 @@ class DashboardOut(BaseModel):
     period: str = "day"
     period_from: date | None = None
     period_to: date | None = None
+    unset_machines: int = 0
     stock_machines: int = 0
     assigned_machines: int = 0
+    open_inspections: int = 0
+    pending_status: int = 0
     programmed: int = 0
     in_process_inspections: int = 0
+    repaired: int = 0
+    no_action: int = 0
     inspections_in_period: int = 0
+    closed_in_period: int = 0
+    programmed_in_period: int = 0
+    in_process_in_period: int = 0
     repaired_in_period: int = 0
+    no_action_in_period: int = 0
     parts_in_period: int = 0
     follows_in_period: int = 0
     parts_by_condition: list[ConditionTotal] = []

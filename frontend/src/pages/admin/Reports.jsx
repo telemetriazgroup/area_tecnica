@@ -143,11 +143,12 @@ export default function Reports() {
           </>
         )}
         {(tab === "total" || tab === "general") && (
-          <select value={workStatus} onChange={(event) => setWorkStatus(event.target.value)} aria-label="Estado de inspección">
-            <option value="todos">Todos los estados</option>
+          <select value={workStatus} onChange={(event) => setWorkStatus(event.target.value)} aria-label="Status">
+            <option value="todos">Todos</option>
             <option value="programado">Programado</option>
             <option value="en_proceso">En proceso</option>
             <option value="reparado">Reparado</option>
+            <option value="sin_accion">Sin acción</option>
           </select>
         )}
         <button className="btn" disabled={busy} type="submit">{busy ? "Generando…" : "Generar"}</button>
@@ -279,7 +280,7 @@ export default function Reports() {
               ))}
             </section>
           ))}
-          {tab === "general" && needs.models?.length === 0 && <Empty title="Sin equipos" text="No hay inspecciones en ese rango para el estado elegido." />}
+          {tab === "general" && needs.models?.length === 0 && <Empty title="Sin equipos" text="No hay inspecciones en ese rango para el status elegido." />}
         </article>
       )}
     </Page>

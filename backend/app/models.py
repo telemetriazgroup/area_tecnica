@@ -97,7 +97,7 @@ class Machine(Base):
     year: Mapped[int | None] = mapped_column(Integer)
     machine_photo: Mapped[str | None] = mapped_column(String(80))
     serial_photo: Mapped[str | None] = mapped_column(String(80))
-    machine_status: Mapped[str] = mapped_column(String(20), index=True, default="stock", server_default="stock")
+    machine_status: Mapped[str] = mapped_column(String(20), index=True, default="", server_default="")
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -144,7 +144,8 @@ class Inspection(Base):
     technician_id: Mapped[int] = mapped_column(ForeignKey("technicians.id"), index=True)
     assigned_technician_id: Mapped[int | None] = mapped_column(ForeignKey("technicians.id"), index=True)
     status: Mapped[str] = mapped_column(String(20), index=True, default="en_proceso")
-    work_status: Mapped[str] = mapped_column(String(20), index=True, default="programado", server_default="programado")
+    work_status: Mapped[str] = mapped_column(String(20), index=True, default="", server_default="")
+    status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 

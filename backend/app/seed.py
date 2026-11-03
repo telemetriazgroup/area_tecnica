@@ -123,7 +123,6 @@ def seed(session: Session) -> None:
         model_id=carrier_model.id,
         location="Patio B",
         year=2016,
-        machine_status="asignado",
     )
     reviewed = Machine(
         serial="RFFU7654321",
@@ -169,6 +168,7 @@ def seed(session: Session) -> None:
         assigned_technician_id=tech_maria.id,
         status="completada",
         work_status="reparado",
+        status_at=now,
         started_at=now - timedelta(hours=2),
         completed_at=now,
     )
@@ -178,7 +178,7 @@ def seed(session: Session) -> None:
         InspectionEvent(
             inspection_id=inspection.id,
             status="reparado",
-            note="Equipo reparado en patio. Lista de repuestos cerrada.",
+            note="La inspección ya está cerrada. Se marca el status en reparado.",
             created_by_id=encargado.id,
             created_at=now,
         )

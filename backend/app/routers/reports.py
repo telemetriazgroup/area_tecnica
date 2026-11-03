@@ -83,7 +83,7 @@ def load_needs_inspections(session: Session, start, end, work_status: str) -> li
     if not work_status:
         return load_completed(session, start, end)
     if work_status != "todos" and work_status not in WORK_STATUSES:
-        raise HTTPException(status_code=400, detail="El estado de inspección no es válido.")
+        raise HTTPException(status_code=400, detail="El status no es válido.")
     activity = or_(
         and_(Inspection.completed_at.is_not(None), Inspection.completed_at >= start, Inspection.completed_at < end),
         and_(Inspection.started_at >= start, Inspection.started_at < end),
@@ -214,32 +214,52 @@ def dashboard(
         )
         return value or 0
 
+    def count_status_period(status: str) -> int:
+        by_event = (
+            select(InspectionEvent.inspection_id)
+            .where(
+                InspectionEvent.status == status,
+                InspectionEvent.created_at >= start,
+                InspectionEvent.created_at < end,
+            )
+        )
+        value = session.scalar(
+            select(func.count())
+            .select_from(Inspection)
+            .where(
+                or_(
+                    Inspection.id.in_(by_event),
+                    and_(
+                        Inspection.work_status == status,
+                        Inspection.status_at.is_not(None),
+                        Inspection.status_at >= start,
+                        Inspection.status_at < end,
+                    ),
+                )
+            )
+        )
+        return value or 0
+
+    open_inspections = session.scalar(
+        select(func.count()).select_from(Inspection).where(Inspection.status == "en_proceso")
+    )
+    pending_status = session.scalar(
+        select(func.count())
+        .select_from(Inspection)
+        .where(Inspection.status == "completada", Inspection.work_status == "")
+    )
     inspections_in_period = session.scalar(
         select(func.count())
         .select_from(Inspection)
         .where(Inspection.started_at >= start, Inspection.started_at < end)
     )
-    repaired_by_event = (
-        select(InspectionEvent.inspection_id)
-        .where(
-            InspectionEvent.status == "reparado",
-            InspectionEvent.created_at >= start,
-            InspectionEvent.created_at < end,
-        )
-    )
-    repaired_in_period = session.scalar(
+    closed_in_period = session.scalar(
         select(func.count())
         .select_from(Inspection)
         .where(
-            or_(
-                Inspection.id.in_(repaired_by_event),
-                and_(
-                    Inspection.work_status == "reparado",
-                    Inspection.completed_at.is_not(None),
-                    Inspection.completed_at >= start,
-                    Inspection.completed_at < end,
-                ),
-            )
+            Inspection.status == "completada",
+            Inspection.completed_at >= start,
+            Inspection.completed_at < end,
         )
     )
     parts_in_period = session.scalar(
@@ -251,7 +271,11 @@ def dashboard(
     follows_in_period = session.scalar(
         select(func.count())
         .select_from(InspectionEvent)
-        .where(InspectionEvent.created_at >= start, InspectionEvent.created_at < end)
+        .where(
+            InspectionEvent.status == "seguimiento",
+            InspectionEvent.created_at >= start,
+            InspectionEvent.created_at < end,
+        )
     )
     condition_rows = session.execute(
         select(InspectionItem.condition, func.coalesce(func.sum(InspectionItem.quantity), 0))
@@ -275,12 +299,21 @@ def dashboard(
         period=period,
         period_from=period_from,
         period_to=period_to,
+        unset_machines=count_machines(""),
         stock_machines=count_machines("stock"),
         assigned_machines=count_machines("asignado"),
+        open_inspections=open_inspections or 0,
+        pending_status=pending_status or 0,
         programmed=count_work("programado"),
         in_process_inspections=count_work("en_proceso"),
+        repaired=count_work("reparado"),
+        no_action=count_work("sin_accion"),
         inspections_in_period=inspections_in_period or 0,
-        repaired_in_period=repaired_in_period or 0,
+        closed_in_period=closed_in_period or 0,
+        programmed_in_period=count_status_period("programado"),
+        in_process_in_period=count_status_period("en_proceso"),
+        repaired_in_period=count_status_period("reparado"),
+        no_action_in_period=count_status_period("sin_accion"),
         parts_in_period=int(parts_in_period or 0),
         follows_in_period=follows_in_period or 0,
         parts_by_condition=parts_by_condition,

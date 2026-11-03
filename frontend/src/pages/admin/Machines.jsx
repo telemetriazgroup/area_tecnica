@@ -22,7 +22,7 @@ const blank = {
   model_id: "",
   location: "",
   year: "",
-  machine_status: "stock",
+  machine_status: "",
   machineFile: null,
   serialFile: null,
   machinePreview: "",
@@ -109,7 +109,7 @@ export default function Machines() {
       model_id: Number(form.model_id),
       location: form.location || null,
       year: form.year === "" ? null : Number(form.year),
-      machine_status: form.machine_status || "stock",
+      machine_status: form.machine_status || "",
     };
     let saved = null;
     try {
@@ -157,7 +157,7 @@ export default function Machines() {
   return (
     <Page
       title="Máquinas"
-      lede="La serie, la marca y el modelo identifican cada reefer. La foto de la máquina, la foto de la serie, la ubicación y el año son opcionales."
+      lede="La serie, la marca y el modelo identifican cada reefer. El estatus empieza en — y el encargado lo pasa a stock o asignado."
       action={<button type="button" className="btn" onClick={() => openForm(null)}>Nueva máquina</button>}
     >
       <Banner>{error || list.error}</Banner>
@@ -165,6 +165,7 @@ export default function Machines() {
         <input value={q} placeholder="Buscar serie o ubicación" onChange={(event) => setQ(event.target.value)} />
         <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Estatus de máquina">
           <option value="">Todos los estatus</option>
+          <option value="sin_estatus">Sin estatus</option>
           <option value="stock">Stock</option>
           <option value="asignado">Asignado</option>
         </select>
@@ -188,7 +189,7 @@ export default function Machines() {
                 <td data-label="Modelo">{row.model_name}</td>
                 <td data-label="Ubicación">{row.location || "—"}</td>
                 <td data-label="Año">{row.year || "—"}</td>
-                <td data-label="Estatus"><Pill value={row.machine_status} label={MACHINE_STATUS_LABEL[row.machine_status]} /></td>
+                <td data-label="Estatus"><Pill value={row.machine_status || "sin_estatus"} label={MACHINE_STATUS_LABEL[row.machine_status] || "—"} /></td>
                 <td data-label="Fotos">{[row.has_machine_photo ? "Máquina" : "", row.has_serial_photo ? "Serie" : ""].filter(Boolean).join(" · ") || "—"}</td>
                 <td data-label="Revisión">{row.active_assignment ? <Pill value={row.active_assignment.status} /> : "Libre"}</td>
                 <td className="actions" data-label="">
@@ -236,8 +237,9 @@ export default function Machines() {
             <Field label="Año" hint="Opcional.">
               <input type="number" min="1980" max="2100" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} />
             </Field>
-            <Field label="Estatus" hint="Stock es una máquina libre. Asignado queda marcado al entregarla a un técnico.">
-              <select value={form.machine_status || "stock"} onChange={(event) => setForm({ ...form, machine_status: event.target.value })}>
+            <Field label="Estatus" hint="Empieza sin estatus. El encargado lo pasa a stock o asignado.">
+              <select value={form.machine_status || ""} onChange={(event) => setForm({ ...form, machine_status: event.target.value })}>
+                <option value="">—</option>
                 <option value="stock">Stock</option>
                 <option value="asignado">Asignado</option>
               </select>

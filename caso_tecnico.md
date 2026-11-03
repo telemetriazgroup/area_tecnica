@@ -75,10 +75,28 @@ dashboard , tecnicos asignados , reparados por tecnico , maquinas reparadas ,
 maquinas asignadas , stock   
 
 
-campo estatus en maquinas STOCK /ASIGNADO 
+campo estatus en maquinas : empieza en "—" . luego el encargado lo pasa a STOCK o ASIGNADO
 
 
 INDICADORES KPI
+
+
+Dos cosas distintas en una inspeccion
+
+Estado de la inspeccion
+    el encargado registra la maquina y asigna al tecnico que la va a revisar
+    el tecnico abre la maquina , define los repuestos (cambio , instalacion , desinstalacion) , pone fotos y notas , y cierra la inspeccion
+    mientras esta abierta el estado es "en revision" . cuando el tecnico termina , el estado es "cerrada"
+    el seguimiento y las fotos de esta etapa no deciden la reparacion
+
+Status  (posterior a la inspeccion)
+    solo cuando la inspeccion ya esta cerrada el encargado decide que sigue
+    programado : se va a reparar
+    en proceso : la reparacion esta en curso
+    reparado : ya se reparo
+    sin accion : no se hara ninguna accion
+    hasta que no se decide , el status queda en "—"
+    es independiente del estado de la inspeccion
 
 
 
